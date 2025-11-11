@@ -2,3 +2,7 @@
   ansible.builtin.apt:
     name: ansible
   become: true
+  register: ansible_install
+  retries: 3
+  delay: 5
+  until: ansible_install is success

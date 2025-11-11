@@ -2,3 +2,7 @@
   ansible.builtin.apt:
     name: ansible-lint
   become: true
+  register: ansible_lint_install
+  retries: 3
+  delay: 5
+  until: ansible_lint_install is success
