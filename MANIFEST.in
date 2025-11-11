@@ -1,0 +1,2 @@
+graft src/python_sprint_zero/resources
+include src/python_sprint_zero/py.typed

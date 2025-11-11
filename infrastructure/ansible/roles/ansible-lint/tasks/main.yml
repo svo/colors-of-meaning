@@ -1,0 +1,4 @@
+- name: Install ansible-lint for linting ansible playbook
+  ansible.builtin.apt:
+    name: ansible-lint
+  become: true

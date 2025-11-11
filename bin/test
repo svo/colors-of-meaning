@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+ansible-lint -p infrastructure/ansible/playbook-*.yml &&
+
+shellcheck -x ./*.sh bin/* &&
+
+tox

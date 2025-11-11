@@ -1,0 +1,9 @@
+- name: Install tox automation project
+  ansible.builtin.apt:
+    name: tox
+  become: true
+
+- name: Install setuptools-scm
+  ansible.builtin.apt:
+    name: python3-setuptools-scm
+  become: true

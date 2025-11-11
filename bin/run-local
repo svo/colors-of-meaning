@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+export APP_RELOAD='true'
+
+usage() {
+  echo "Usage: $0 [OPTIONS]"
+  echo "Options:"
+  echo " -c, --cleanup"
+}
+
+cleanup() {
+  echo "nothing to clean"
+}
+
+handle_options() {
+  while [ $# -gt 0 ]; do
+    case $1 in
+     -c | --cleanup)
+       echo ""
+       echo "---------------------------------------"
+       echo "Removing data prior to running service."
+       cleanup
+       echo ""
+       echo "---------------------------------------"
+       echo ""
+       ;;
+     *)
+       echo "Invalid option: $1" >&2
+       usage
+       exit 1
+       ;;
+    esac
+    shift
+  done
+}
+
+handle_options "$@"
+
+python3 -m venv /tmp/development
+
+# shellcheck disable=SC1091
+source /tmp/development/bin/activate
+
+pip install -e .
+python -m python_sprint_zero

@@ -1,0 +1,4 @@
+- name: Install PyScaffold to help setup new Python project
+  ansible.builtin.pip:
+    name: pyscaffold[all]
+    executable: pipx
