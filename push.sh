@@ -4,7 +4,7 @@ image=$1 &&
 architecture=$2 &&
 
 if [ -z "$architecture" ]; then
-  docker push "svanosselaer/python-sprint-zero-${image}" --all-tags
+  docker push "svanosselaer/colors-of-meaning-${image}" --all-tags
 else
-  docker push "svanosselaer/python-sprint-zero-${image}:${architecture}"
+  docker push "svanosselaer/colors-of-meaning-${image}:${architecture}"
 fi

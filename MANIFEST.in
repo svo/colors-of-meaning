@@ -1,2 +1,2 @@
-graft src/python_sprint_zero/resources
-include src/python_sprint_zero/py.typed
+graft src/colors_of_meaning/resources
+include src/colors_of_meaning/py.typed

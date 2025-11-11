@@ -2,7 +2,7 @@
 Contributing
 ============
 
-Welcome to ``python-sprint-zero`` contributor's guide. This project embraces clean architecture, Hexagonal Architecture, and Domain-Driven Design principles, so contributions should align with its modular, testable, and secure structure.
+Welcome to ``colors-of-meaning`` contributor's guide. This project embraces clean architecture, Hexagonal Architecture, and Domain-Driven Design principles, so contributions should align with its modular, testable, and secure structure.
 
 If you're new to Git or contributing to open source projects, check out the `FreeCodeCamp contribution guide`_ and `contribution-guide.org`_.
 
@@ -43,8 +43,8 @@ Setup
 
 .. code:: bash
 
-    git clone git@github.com:svo/python-sprint-zero.git
-    cd python-sprint-zero
+    git clone git@github.com:Qualis/colors-of-meaning.git
+    cd colors-of-meaning
     pip install -U pip setuptools -e .
 
 2. Create a virtual environment:
@@ -135,8 +135,8 @@ Resources
 .. _FreeCodeCamp contribution guide: https://github.com/FreeCodeCamp/how-to-contribute-to-open-source
 .. _contribution-guide.org: https://www.contribution-guide.org/
 .. _Python Software Foundation's Code of Conduct: https://www.python.org/psf/conduct/
-.. _issue tracker: https://github.com/svo/python-sprint-zero/issues
-.. _repository: https://github.com/svo/python-sprint-zero
+.. _issue tracker: https://github.com/Qualis/colors-of-meaning/issues
+.. _repository: https://github.com/Qualis/colors-of-meaning
 .. _reStructuredText: https://www.sphinx-doc.org/en/master/usage/restructuredtext/
 .. _Sphinx: https://www.sphinx-doc.org/en/master/
 

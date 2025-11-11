@@ -1,9 +1,9 @@
 [run]
 branch = True
-source = python_sprint_zero
+source = colors_of_meaning
 omit =
     */__init__.py
-    */python_sprint_zero/__main__.py
+    */colors_of_meaning/__main__.py
 
 [paths]
 source =

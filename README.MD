@@ -1,8 +1,8 @@
-# Python Sprint Zero
+# Colors of Meaning
 
-[![Build Builder](https://github.com/svo/python-sprint-zero/actions/workflows/builder.yml/badge.svg)](https://github.com/svo/python-sprint-zero/actions/workflows/builder.yml)
-[![Build Development](https://github.com/svo/python-sprint-zero/actions/workflows/development.yml/badge.svg)](https://github.com/svo/python-sprint-zero/actions/workflows/development.yml)
-[![Build Service](https://github.com/svo/python-sprint-zero/actions/workflows/service.yml/badge.svg)](https://github.com/svo/python-sprint-zero/actions/workflows/service.yml)
+[![Build Builder](https://github.com/Qualis/colors-of-meaning/actions/workflows/builder.yml/badge.svg)](https://github.com/Qualis/colors-of-meaning/actions/workflows/builder.yml)
+[![Build Development](https://github.com/Qualis/colors-of-meaning/actions/workflows/development.yml/badge.svg)](https://github.com/Qualis/colors-of-meaning/actions/workflows/development.yml)
+[![Build Service](https://github.com/Qualis/colors-of-meaning/actions/workflows/service.yml/badge.svg)](https://github.com/Qualis/colors-of-meaning/actions/workflows/service.yml)
 
 ## Development
 

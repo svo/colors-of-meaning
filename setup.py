@@ -6,8 +6,8 @@ if __name__ == "__main__":
             use_scm_version={"version_scheme": "no-guess-dev"},
             entry_points={
                 "console_scripts": [
-                    "python-sprint-zero=python_sprint_zero.interface.api.main:run",
-                    "python-sprint-zero-cli=python_sprint_zero.interface.cli.main:run",
+                    "colors-of-meaning=colors_of_meaning.interface.api.main:run",
+                    "colors-of-meaning-cli=colors_of_meaning.interface.cli.main:run",
                 ]
             },
         )

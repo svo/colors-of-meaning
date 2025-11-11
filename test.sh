@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-docker run --rm -v "$(pwd)":/working-dir svanosselaer/python-sprint-zero-builder:latest
+docker run --rm -v "$(pwd)":/working-dir svanosselaer/colors-of-meaning-builder:latest

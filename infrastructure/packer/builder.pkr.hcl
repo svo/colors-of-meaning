@@ -7,7 +7,7 @@ source "docker" "arm64" {
   ]
   commit      = "true"
   image       = "debian:12-slim"
-  run_command = ["-d", "-i", "-t", "-v", "/var/run/docker.sock:/var/run/docker.sock", "--name", "packer-python-sprint-zero-builder-arm64", "{{.Image}}", "/bin/bash"]
+  run_command = ["-d", "-i", "-t", "-v", "/var/run/docker.sock:/var/run/docker.sock", "--name", "packer-colors-of-meaning-builder-arm64", "{{.Image}}", "/bin/bash"]
   platform    = "linux/arm64/v8"
 }
 
@@ -20,7 +20,7 @@ source "docker" "amd64" {
   ]
   commit      = "true"
   image       = "debian:12-slim"
-  run_command = ["-d", "-i", "-t", "-v", "/var/run/docker.sock:/var/run/docker.sock", "--name", "packer-python-sprint-zero-builder-amd64", "{{.Image}}", "/bin/bash"]
+  run_command = ["-d", "-i", "-t", "-v", "/var/run/docker.sock:/var/run/docker.sock", "--name", "packer-colors-of-meaning-builder-amd64", "{{.Image}}", "/bin/bash"]
   platform    = "linux/amd64"
 }
 
@@ -35,13 +35,13 @@ build {
   }
 
   provisioner "ansible" {
-    extra_arguments = ["--extra-vars", "ansible_host=packer-python-sprint-zero-builder-${source.name} ansible_connection=docker"]
+    extra_arguments = ["--extra-vars", "ansible_host=packer-colors-of-meaning-builder-${source.name} ansible_connection=docker"]
     playbook_file   = "infrastructure/ansible/playbook-builder.yml"
     user            = "root"
   }
 
   post-processor "docker-tag" {
-    repository = "svanosselaer/python-sprint-zero-builder"
+    repository = "svanosselaer/colors-of-meaning-builder"
     tags       = ["${source.name}"]
   }
 }

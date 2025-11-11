@@ -1,7 +1,7 @@
 source "docker" "arm64" {
   commit      = "true"
   image       = "node:18-alpine"
-  run_command = ["-d", "-i", "-t", "--name", "packer-python-sprint-zero-mock-arm64", "--entrypoint", "/bin/sh", "{{.Image}}"]
+  run_command = ["-d", "-i", "-t", "--name", "packer-colors-of-meaning-mock-arm64", "--entrypoint", "/bin/sh", "{{.Image}}"]
   changes = [
     "WORKDIR /app",
     "ENTRYPOINT [\"prism\"]",
@@ -13,7 +13,7 @@ source "docker" "arm64" {
 source "docker" "amd64" {
   commit      = "true"
   image       = "node:18-alpine"
-  run_command = ["-d", "-i", "-t", "--name", "packer-python-sprint-zero-mock-amd64", "--entrypoint", "/bin/sh", "{{.Image}}"]
+  run_command = ["-d", "-i", "-t", "--name", "packer-colors-of-meaning-mock-amd64", "--entrypoint", "/bin/sh", "{{.Image}}"]
   changes = [
     "WORKDIR /app",
     "ENTRYPOINT [\"prism\"]",
@@ -47,7 +47,7 @@ build {
 
   post-processors {
     post-processor "docker-tag" {
-      repository = "svanosselaer/python-sprint-zero-mock"
+      repository = "svanosselaer/colors-of-meaning-mock"
       tags       = ["${source.name}"]
     }
   }
