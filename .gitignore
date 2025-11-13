@@ -1,4 +1,5 @@
 # Development environment
+.claude
 .vagrant
 
 # Temporary and binary files
