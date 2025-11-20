@@ -10,11 +10,8 @@ from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import PyTorchColo
 from colors_of_meaning.infrastructure.persistence.file_color_codebook_repository import (
     FileColorCodebookRepository,
 )
-from colors_of_meaning.infrastructure.distance.wasserstein_distance_calculator import (
+from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import (
     WassersteinDistanceCalculator,
-)
-from colors_of_meaning.infrastructure.persistence.in_memory_dataset_repository import (
-    InMemoryDatasetRepository,
 )
 from colors_of_meaning.infrastructure.dataset.ag_news_dataset_adapter import (
     AGNewsDatasetAdapter,
@@ -34,8 +31,8 @@ from colors_of_meaning.infrastructure.evaluation.color_histogram_classifier impo
 from colors_of_meaning.infrastructure.evaluation.tfidf_classifier import (
     TFIDFClassifier,
 )
-from colors_of_meaning.infrastructure.evaluation.faiss_pq_classifier import (
-    FAISSPQClassifier,
+from colors_of_meaning.infrastructure.evaluation.hnsw_classifier import (
+    HNSWClassifier,
 )
 from colors_of_meaning.application.use_case.encode_document_use_case import (
     EncodeDocumentUseCase,
@@ -43,19 +40,20 @@ from colors_of_meaning.application.use_case.encode_document_use_case import (
 from colors_of_meaning.application.use_case.evaluate_use_case import (
     EvaluateUseCase,
 )
+from colors_of_meaning.domain.repository.dataset_repository import DatasetRepository
 
 
 @dataclass
 class EvalArgs:
     config: str = "configs/base.yaml"
     dataset: Literal["ag_news", "imdb", "newsgroups"] = "ag_news"
-    method: Literal["color", "tfidf", "faiss_pq"] = "color"
+    method: Literal["color", "tfidf", "hnsw"] = "color"
     model_path: str = "artifacts/models/projector.pth"
     codebook_path: str = "artifacts/codebooks/codebook_4096"
     k_neighbors: int = 5
 
 
-def _setup_dataset(dataset_name: str, dataset_repo: InMemoryDatasetRepository) -> None:
+def _setup_dataset(dataset_name: str) -> DatasetRepository:
     dataset_adapters = {
         "ag_news": (AGNewsDatasetAdapter, "Loading AG News dataset..."),
         "imdb": (IMDBDatasetAdapter, "Loading IMDB dataset..."),
@@ -63,7 +61,7 @@ def _setup_dataset(dataset_name: str, dataset_repo: InMemoryDatasetRepository) -
     }
     adapter_class, message = dataset_adapters[dataset_name]
     print(message)
-    dataset_repo.register_adapter(dataset_name, adapter_class())
+    return adapter_class()
 
 
 def _create_color_classifier(args: EvalArgs, config: SynestheticConfig) -> tuple:
@@ -80,6 +78,8 @@ def _create_color_classifier(args: EvalArgs, config: SynestheticConfig) -> tuple
     )
     color_mapper.load_weights(args.model_path)
     codebook = FileColorCodebookRepository().load(args.codebook_path)
+    if codebook is None:
+        raise FileNotFoundError(f"Codebook not found at {args.codebook_path}")
     quantized_mapper = QuantizedColorMapper(color_mapper, codebook)
     encode_use_case = EncodeDocumentUseCase(quantized_mapper)
     classifier = ColorHistogramClassifier(
@@ -94,19 +94,20 @@ def _create_classifier(args: EvalArgs, config: SynestheticConfig) -> tuple:
     elif args.method == "tfidf":
         print("Using TF-IDF baseline...")
         return TFIDFClassifier(), None
-    elif args.method == "faiss_pq":
-        print("Using FAISS+PQ baseline...")
-        return FAISSPQClassifier(SentenceEmbeddingAdapter(), k=args.k_neighbors), None
+    elif args.method == "hnsw":
+        print("Using HNSW baseline...")
+        return HNSWClassifier(SentenceEmbeddingAdapter(), k=args.k_neighbors), None
+    else:
+        raise ValueError(f"Unknown method: {args.method}")
 
 
 def main(args: EvalArgs) -> None:
     config = SynestheticConfig.from_yaml(args.config)
-    dataset_repo = InMemoryDatasetRepository()
-    _setup_dataset(args.dataset, dataset_repo)
+    dataset_repo = _setup_dataset(args.dataset)
     classifier, bits_per_token = _create_classifier(args, config)
     evaluate_use_case = EvaluateUseCase(classifier, SklearnMetricsCalculator(), dataset_repo)
     print(f"Evaluating on {args.dataset} with {args.method} method...")
-    result = evaluate_use_case.execute(args.dataset, bits_per_token=bits_per_token)
+    result = evaluate_use_case.execute(bits_per_token=bits_per_token)
     print("\n=== Evaluation Results ===")
     print(f"Dataset: {args.dataset}")
     print(f"Method: {args.method}")

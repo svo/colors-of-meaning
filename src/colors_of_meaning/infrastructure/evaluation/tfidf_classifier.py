@@ -38,4 +38,4 @@ class TFIDFClassifier(Classifier):
         x_test = self.vectorizer.transform(texts)
         predictions = self.classifier.predict(x_test)
 
-        return list(predictions)
+        return [int(pred) for pred in predictions]

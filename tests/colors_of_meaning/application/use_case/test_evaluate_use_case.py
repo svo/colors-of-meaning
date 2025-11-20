@@ -41,15 +41,15 @@ class TestEvaluateUseCase:
     ) -> None:
         train_samples = [EvaluationSample(text="train", label=0, split="train")]
         test_samples = [EvaluationSample(text="test", label=0, split="test")]
-        mock_dataset_repository.load.side_effect = [train_samples, test_samples]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
         mock_classifier.predict.return_value = [0]
         mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
             accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0
         )
 
-        use_case.execute("test_dataset")
+        use_case.execute()
 
-        mock_dataset_repository.load.assert_any_call("test_dataset", split="train")
+        mock_dataset_repository.get_samples.assert_any_call(split="train")
 
     def test_should_load_test_dataset_from_repository(
         self,
@@ -60,15 +60,15 @@ class TestEvaluateUseCase:
     ) -> None:
         train_samples = [EvaluationSample(text="train", label=0, split="train")]
         test_samples = [EvaluationSample(text="test", label=0, split="test")]
-        mock_dataset_repository.load.side_effect = [train_samples, test_samples]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
         mock_classifier.predict.return_value = [0]
         mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
             accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0
         )
 
-        use_case.execute("test_dataset")
+        use_case.execute()
 
-        mock_dataset_repository.load.assert_any_call("test_dataset", split="test")
+        mock_dataset_repository.get_samples.assert_any_call(split="test")
 
     def test_should_fit_classifier_with_train_samples(
         self,
@@ -79,13 +79,13 @@ class TestEvaluateUseCase:
     ) -> None:
         train_samples = [EvaluationSample(text="train", label=0, split="train")]
         test_samples = [EvaluationSample(text="test", label=0, split="test")]
-        mock_dataset_repository.load.side_effect = [train_samples, test_samples]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
         mock_classifier.predict.return_value = [0]
         mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
             accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0
         )
 
-        use_case.execute("test_dataset")
+        use_case.execute()
 
         mock_classifier.fit.assert_called_once_with(train_samples)
 
@@ -98,13 +98,13 @@ class TestEvaluateUseCase:
     ) -> None:
         train_samples = [EvaluationSample(text="train", label=0, split="train")]
         test_samples = [EvaluationSample(text="test", label=0, split="test")]
-        mock_dataset_repository.load.side_effect = [train_samples, test_samples]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
         mock_classifier.predict.return_value = [0]
         mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
             accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0
         )
 
-        use_case.execute("test_dataset")
+        use_case.execute()
 
         mock_classifier.predict.assert_called_once_with(test_samples)
 
@@ -117,13 +117,13 @@ class TestEvaluateUseCase:
     ) -> None:
         train_samples = [EvaluationSample(text="train", label=0, split="train")]
         test_samples = [EvaluationSample(text="test", label=1, split="test")]
-        mock_dataset_repository.load.side_effect = [train_samples, test_samples]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
         mock_classifier.predict.return_value = [1]
         mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
             accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0
         )
 
-        use_case.execute("test_dataset")
+        use_case.execute()
 
         mock_metrics_calculator.calculate_classification_metrics.assert_called_once_with(
             y_true=[1], y_pred=[1], bits_per_token=None
@@ -138,12 +138,12 @@ class TestEvaluateUseCase:
     ) -> None:
         train_samples = [EvaluationSample(text="train", label=0, split="train")]
         test_samples = [EvaluationSample(text="test", label=0, split="test")]
-        mock_dataset_repository.load.side_effect = [train_samples, test_samples]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
         mock_classifier.predict.return_value = [0]
         expected_result = EvaluationResult(accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0)
         mock_metrics_calculator.calculate_classification_metrics.return_value = expected_result
 
-        result = use_case.execute("test_dataset")
+        result = use_case.execute()
 
         assert result == expected_result
 
@@ -156,13 +156,13 @@ class TestEvaluateUseCase:
     ) -> None:
         train_samples = [EvaluationSample(text="train", label=0, split="train")]
         test_samples = [EvaluationSample(text="test", label=0, split="test")]
-        mock_dataset_repository.load.side_effect = [train_samples, test_samples]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
         mock_classifier.predict.return_value = [0]
         mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
             accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0, bits_per_token=12.0
         )
 
-        use_case.execute("test_dataset", bits_per_token=12.0)
+        use_case.execute(bits_per_token=12.0)
 
         mock_metrics_calculator.calculate_classification_metrics.assert_called_once_with(
             y_true=[0], y_pred=[0], bits_per_token=12.0

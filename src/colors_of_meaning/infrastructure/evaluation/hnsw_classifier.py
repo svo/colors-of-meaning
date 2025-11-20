@@ -1,6 +1,5 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 import numpy as np
-import faiss  # type: ignore
 from collections import Counter
 
 from colors_of_meaning.domain.service.classifier import Classifier
@@ -10,27 +9,48 @@ from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter impor
 )
 
 
-class FAISSPQClassifier(Classifier):
+class HNSWClassifier(Classifier):
+    """
+    k-NN classifier using HNSW (Hierarchical Navigable Small World) graphs.
+
+    This is a more portable alternative to FAISS, with excellent ARM64 support
+    and faster performance on CPU. Trade-off: uses more memory than FAISS+PQ
+    as it stores full-precision vectors.
+    """
+
     def __init__(
         self,
         embedding_adapter: SentenceEmbeddingAdapter,
-        nlist: int = 100,
-        m: int = 8,
-        nbits: int = 8,
+        M: int = 16,  # noqa: N803
+        ef_construction: int = 200,
         k: int = 5,
-        nprobe: int = 10,
+        ef: int = 50,
     ) -> None:
+        """
+        Initialize HNSW classifier.
+
+        Args:
+            embedding_adapter: Adapter for encoding text to embeddings
+            M: Number of bi-directional links per node (12-48 typical).
+                Higher = better recall, more memory
+            ef_construction: Size of dynamic candidate list during construction.
+                Higher = better quality index, slower build time
+            k: Number of nearest neighbors for classification
+            ef: Size of dynamic candidate list during search. Must be >= k.
+                Higher = better recall, slower search
+        """
         self.embedding_adapter = embedding_adapter
-        self.nlist = nlist
-        self.m = m
-        self.nbits = nbits
+        self.M = M  # noqa: N803
+        self.ef_construction = ef_construction
         self.k = k
-        self.nprobe = nprobe
-        self.index: Optional[faiss.IndexIVFPQ] = None  # type: ignore
+        self.ef = ef
+        self.index: Optional[Any] = None
         self.training_labels: List[int] = []
         self.dimension: Optional[int] = None
 
     def fit(self, samples: List[EvaluationSample]) -> None:
+        import hnswlib  # type: ignore
+
         texts = [sample.text for sample in samples]
         self.training_labels = [sample.label for sample in samples]
 
@@ -38,20 +58,32 @@ class FAISSPQClassifier(Classifier):
         embeddings_array = np.array(embeddings, dtype=np.float32)
 
         self.dimension = embeddings_array.shape[1]
+        num_elements = embeddings_array.shape[0]
 
-        quantizer = faiss.IndexFlatL2(self.dimension)
-        self.index = faiss.IndexIVFPQ(quantizer, self.dimension, self.nlist, self.m, self.nbits)
+        # Create and initialize HNSW index
+        self.index = hnswlib.Index(space="l2", dim=self.dimension)
+        self.index.init_index(
+            max_elements=num_elements,
+            ef_construction=self.ef_construction,
+            M=self.M,
+            random_seed=100,
+        )
 
-        self.index.train(embeddings_array)
-        self.index.add(embeddings_array)
-        self.index.nprobe = self.nprobe
+        # Add vectors to index
+        self.index.add_items(embeddings_array, np.arange(num_elements))
+
+        # Set query-time search parameters
+        self.index.set_ef(self.ef)
 
     def predict(self, samples: List[EvaluationSample]) -> List[int]:
         if self.index is None:
             raise RuntimeError("Classifier must be fitted before prediction")
 
         embeddings_array = self._encode_samples(samples)
-        distances, indices = self.index.search(embeddings_array, self.k)
+
+        # Search returns (indices, distances) - note opposite order from FAISS
+        indices, _ = self.index.knn_query(embeddings_array, k=self.k)
+
         predictions = [self._predict_label(neighbor_indices) for neighbor_indices in indices]
 
         return predictions

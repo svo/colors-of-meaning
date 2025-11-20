@@ -37,6 +37,9 @@ class ColorHistogramClassifier(Classifier):
             self.training_labels.append(sample.label)
 
     def predict(self, samples: List[EvaluationSample]) -> List[int]:
+        if not self.training_docs:
+            raise RuntimeError("Classifier must be fitted before prediction")
+
         predictions = []
 
         for idx, sample in enumerate(samples):
