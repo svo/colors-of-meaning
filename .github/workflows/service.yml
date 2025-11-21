@@ -20,6 +20,18 @@ jobs:
         name: Checkout
         uses: actions/checkout@v4
 
+      - id: free-disk-space
+        name: Free Disk Space
+        shell: bash
+        run: |
+          # Remove unnecessary files to free up disk space for large ML dependencies
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
       - id: docker-login
         name: Docker:Login
         uses: docker/login-action@v2
