@@ -1,0 +1,9 @@
+- name: Install python development headers
+  ansible.builtin.apt:
+    pkg: python3-dev
+  become: true
+
+- name: Install build-essential for compiling Python extensions
+  ansible.builtin.apt:
+    pkg: build-essential
+  become: true

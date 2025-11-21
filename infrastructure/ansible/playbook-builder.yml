@@ -5,6 +5,7 @@
   roles:
     - git
     - python
+    - python-development
     - pipx
     - ansible
     - docker
