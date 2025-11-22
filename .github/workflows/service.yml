@@ -74,6 +74,9 @@ jobs:
           sudo rm -rf /tmp/.tox
           docker image rm svanosselaer/colors-of-meaning-builder:latest || true
           sudo docker system prune --all --force --volumes
+          sudo apt-get autoremove -y
+          sudo apt-get autoclean -y
+          sudo journalctl --vacuum-time=1d || true
 
           echo "Disk space after cleanup:"
           df -h
@@ -82,7 +85,9 @@ jobs:
         name: Docker:Build
         shell: bash
         run: |
-          ./build-service.sh | tail -n1 >> $GITHUB_OUTPUT
+          set -o pipefail
+          ./build-service.sh 2>&1 | tee /tmp/build.log
+          tail -n1 /tmp/build.log >> $GITHUB_OUTPUT
 
       - id: upload-openapi-artifact
         name: OpenAPI:Upload
