@@ -13,6 +13,16 @@
     pkg: python3-setuptools
   become: true
 
+- name: Install python development headers
+  ansible.builtin.apt:
+    pkg: python3-dev
+  become: true
+
+- name: Install build-essential for compiling Python extensions
+  ansible.builtin.apt:
+    pkg: build-essential
+  become: true
+
 - name: Update ~/.profile
   ansible.builtin.blockinfile:
     create: true

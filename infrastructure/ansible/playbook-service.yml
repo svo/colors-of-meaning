@@ -9,4 +9,5 @@
       become: true
 
   roles:
+    - python
     - pipx
