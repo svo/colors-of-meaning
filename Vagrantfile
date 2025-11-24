@@ -20,7 +20,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       docker.volumes = [
         '/var/run/docker.sock:/var/run/docker.sock'
       ]
-      docker.ports = ["8001:8000"]
+      docker.ports = ["8002:8000"]
     end
 
     if Vagrant.has_plugin?("vagrant-cachier")
