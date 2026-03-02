@@ -60,5 +60,8 @@ MANIFEST
 # Artifacts (models, codebooks, encoded documents)
 artifacts/
 
+# Generated reports and figures
+reports/
+
 # Training data (sample data is tracked separately)
 data/train.txt

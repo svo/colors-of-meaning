@@ -32,9 +32,8 @@ The core idea is to map semantic embeddings into perceptual color space (CIE Lab
 
 - ✅ **Phase 1**: Core infrastructure (color mapping, encoding, compression)
 - ✅ **Phase 2**: Evaluation pipeline and baselines
-- ⏳ **Phase 3**: Visualizations and interpretability analysis
+- ✅ **Phase 3**: Visualizations (codebook palette, histograms, t-SNE projections, confusion matrices)
 
-**Test Coverage**: 100% (476 tests passing)
 **Quality Gates**: All passing (flake8, black, bandit, semgrep, xenon, mypy, pip-audit)
 
 ## Quick Start
@@ -43,31 +42,97 @@ The core idea is to map semantic embeddings into perceptual color space (CIE Lab
 
 ```bash
 # TF-IDF baseline (fast, ~12 seconds)
-python -m colors_of_meaning.interface.cli.eval \
-  --dataset ag_news \
-  --method tfidf
+tox -e eval -- --dataset ag_news --method tfidf
 
 # HNSW embedding baseline (slower, ~30 minutes)
-python -m colors_of_meaning.interface.cli.eval \
-  --dataset ag_news \
-  --method hnsw \
-  --k-neighbors 5
+tox -e eval -- --dataset ag_news --method hnsw --k-neighbors 5
 ```
 
 ### Train and Evaluate Color Method
 
 ```bash
 # Step 1: Train the color mapper
-python -m colors_of_meaning.interface.cli.train \
-  --config configs/base.yaml
+tox -e train -- --config configs/base.yaml
 
 # Step 2: Evaluate color method
-python -m colors_of_meaning.interface.cli.eval \
-  --dataset ag_news \
-  --method color
+tox -e eval -- --dataset ag_news --method color
+```
+
+### Generate Visualizations
+
+```bash
+# Codebook palette
+tox -e visualize -- --visualization-type codebook
+
+# Document color histograms
+tox -e visualize -- --visualization-type histograms --dataset ag_news --max-samples 50
+
+# t-SNE projection of color distributions
+tox -e visualize -- --visualization-type projection --dataset ag_news --max-samples 200
+
+# Confusion matrix
+tox -e visualize -- --visualization-type confusion_matrix --dataset ag_news --method color
 ```
 
 ## CLI Reference
+
+All CLI tools are available via tox environments or as Python modules directly.
+
+### Training
+
+Train the embedding-to-color projector:
+
+```bash
+tox -e train -- --config configs/base.yaml
+```
+
+**Arguments**:
+- `--config`: Configuration YAML file (default: `configs/base.yaml`)
+- `--dataset-path`: Path to training text file (default: `data/train.txt`)
+- `--output-model`: Output path for trained model (default: `artifacts/models/projector.pth`)
+- `--output-codebook`: Output name for color codebook (default: `codebook_4096`)
+
+### Encoding
+
+Encode documents to color histograms:
+
+```bash
+tox -e encode -- --config configs/base.yaml --split test
+```
+
+**Arguments**:
+- `--config`: Configuration YAML file (default: `configs/base.yaml`)
+- `--split`: Dataset split (`train`, `test`)
+- `--model-path`: Path to trained model (default: `artifacts/models/projector.pth`)
+- `--codebook-name`: Color codebook name (default: `codebook_4096`)
+- `--output-path`: Output path for encoded documents (default: `artifacts/encoded/test_documents.pkl`)
+
+### Comparison
+
+Compare documents via color distance:
+
+```bash
+tox -e compare -- --config configs/base.yaml --k 5
+```
+
+**Arguments**:
+- `--config`: Configuration YAML file (default: `configs/base.yaml`)
+- `--encoded-documents`: Path to encoded documents (default: `artifacts/encoded/test_documents.pkl`)
+- `--k`: Number of nearest neighbors to find (default: 5)
+- `--query-index`: Index of query document (default: 0)
+
+### Compression
+
+Analyze compression ratios:
+
+```bash
+tox -e compress -- --config configs/base.yaml --method vq
+```
+
+**Arguments**:
+- `--config`: Configuration YAML file (default: `configs/base.yaml`)
+- `--encoded-documents`: Path to encoded documents (default: `artifacts/encoded/test_documents.pkl`)
+- `--method`: Compression method (default: `vq`)
 
 ### Evaluation
 
@@ -75,21 +140,13 @@ Evaluate classification performance with different methods:
 
 ```bash
 # Evaluate on AG News (4-class topic classification)
-python -m colors_of_meaning.interface.cli.eval \
-  --dataset ag_news \
-  --method [tfidf|hnsw|color] \
-  --k-neighbors 5
+tox -e eval -- --dataset ag_news --method tfidf
 
 # Evaluate on IMDB (binary sentiment classification)
-python -m colors_of_meaning.interface.cli.eval \
-  --dataset imdb \
-  --method tfidf
+tox -e eval -- --dataset imdb --method tfidf
 
 # Evaluate on 20 Newsgroups (20-class topic classification)
-python -m colors_of_meaning.interface.cli.eval \
-  --dataset newsgroups \
-  --method hnsw \
-  --k-neighbors 10
+tox -e eval -- --dataset newsgroups --method hnsw --k-neighbors 10
 ```
 
 **Arguments**:
@@ -98,51 +155,36 @@ python -m colors_of_meaning.interface.cli.eval \
 - `--k-neighbors`: Number of neighbors for k-NN methods (default: 5)
 - `--config`: Configuration file (default: `configs/base.yaml`)
 - `--model-path`: Path to trained projector model (default: `artifacts/models/projector.pth`)
-- `--codebook-path`: Color codebook name (default: `codebook_4096`, resolved from `artifacts/codebooks/`)
+- `--codebook-path`: Color codebook name (default: `codebook_4096`)
 
-### Training
+### Visualization
 
-Train the embedding-to-color projector:
-
-```bash
-python -m colors_of_meaning.interface.cli.train \
-  --config configs/base.yaml
-```
-
-### Encoding
-
-Encode documents to color histograms:
+Generate visualizations of the color mapping pipeline. Output is saved to `reports/figures/`.
 
 ```bash
-python -m colors_of_meaning.interface.cli.encode \
-  --config configs/base.yaml \
-  --split test
-```
+# Codebook palette (4,096-color swatch grid)
+tox -e visualize -- --visualization-type codebook
 
-### Comparison
+# Document color histograms by class
+tox -e visualize -- --visualization-type histograms --dataset ag_news --max-samples 50
 
-Compare documents via color distance:
+# t-SNE projection of color distributions
+tox -e visualize -- --visualization-type projection --dataset ag_news --max-samples 200
 
-```bash
-python -m colors_of_meaning.interface.cli.compare \
-  --config configs/base.yaml \
-  --k 5 \
-  --distance wasserstein
+# Confusion matrix for a classification method
+tox -e visualize -- --visualization-type confusion_matrix --dataset ag_news --method color
 ```
 
 **Arguments**:
-- `--k`: Number of nearest neighbors to find
-- `--distance`: Distance metric (`wasserstein` or `jensen_shannon`)
-
-### Compression
-
-Analyze compression ratios:
-
-```bash
-python -m colors_of_meaning.interface.cli.compress \
-  --config configs/base.yaml \
-  --method vq
-```
+- `--visualization-type`: Type of visualization (`codebook`, `histograms`, `projection`, `confusion_matrix`)
+- `--config`: Configuration YAML file (default: `configs/base.yaml`)
+- `--dataset`: Dataset to visualize (`ag_news`, `imdb`, `newsgroups`)
+- `--method`: Classification method for confusion matrix (`color`, `tfidf`, `hnsw`)
+- `--model-path`: Path to trained model (default: `artifacts/models/projector.pth`)
+- `--codebook-name`: Color codebook name (default: `codebook_4096`)
+- `--k-neighbors`: Number of neighbors for k-NN methods (default: 5)
+- `--output-dir`: Output directory for figures (default: `reports/figures`)
+- `--max-samples`: Maximum number of samples to process (default: 500)
 
 ## Development
 
@@ -161,6 +203,20 @@ vagrant up
 vagrant provision
 vagrant ssh
 ```
+
+### Tox Environments
+
+| Command | Description |
+|---------|-------------|
+| `tox` | Run all quality gates and tests |
+| `tox -e format` | Format code with black |
+| `tox -e watch` | Watch for changes and run tests |
+| `tox -e train -- [args]` | Train the embedding-to-color projector |
+| `tox -e encode -- [args]` | Encode documents to color histograms |
+| `tox -e compare -- [args]` | Compare documents via color distance |
+| `tox -e compress -- [args]` | Analyze compression ratios |
+| `tox -e eval -- [args]` | Evaluate classification performance |
+| `tox -e visualize -- [args]` | Generate visualizations |
 
 ### Test
 
@@ -218,6 +274,8 @@ colors_of_meaning/
         compare_documents_use_case.py
         compress_document_use_case.py
         evaluate_use_case.py
+        visualize_codebook_use_case.py
+        visualize_documents_use_case.py
 
  domain/                            # Business logic
     model/
@@ -235,6 +293,7 @@ colors_of_meaning/
         classifier.py
         retriever.py
         metrics_calculator.py
+        figure_renderer.py
 
  infrastructure/                    # Adapters, drivers
     dataset/
@@ -255,6 +314,8 @@ colors_of_meaning/
     persistence/
         file_color_codebook_repository.py
         in_memory/
+    visualization/
+        matplotlib_figure_renderer.py
     security/
         basic_authentication.py
     system/
@@ -272,6 +333,7 @@ colors_of_meaning/
         compare.py
         compress.py
         eval.py
+        visualize.py
 
  shared/                            # Cross-cutting concerns
     configuration.py
@@ -301,6 +363,7 @@ colors_of_meaning/
 - `evaluation/` provides classifier implementations (TF-IDF, HNSW, color histogram)
 - `dataset/` adapts external datasets (AG News, IMDB, 20 Newsgroups)
 - `embedding/` wraps sentence-transformers for text encoding
+- `visualization/` renders figures using matplotlib (codebook palettes, histograms, projections, confusion matrices)
 - `security/` provides token-based authentication
 - `system/` contains diagnostics (e.g., disk, database checks)
 
@@ -308,7 +371,7 @@ colors_of_meaning/
 
 - `api/controller/` expose `FastAPI` routes and depend on use cases
 - `api/data_transfer_object/` define `Pydantic` model for request/response shaping
-- `cli/` provides command-line tools for training, encoding, evaluation, and compression
+- `cli/` provides command-line tools for training, encoding, evaluation, compression, and visualization
 
 #### Shared
 
