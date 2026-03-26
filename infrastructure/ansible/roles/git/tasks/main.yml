@@ -2,3 +2,10 @@
   ansible.builtin.apt:
     pkg: git-core
   become: true
+
+- name: Trust working directory for git safe.directory
+  community.general.git_config:
+    name: safe.directory
+    value: "{{ git_safe_directory }}"
+    scope: global
+  become: true
