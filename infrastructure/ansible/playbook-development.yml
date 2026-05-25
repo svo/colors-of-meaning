@@ -53,7 +53,9 @@
           export PYTHONDONTWRITEBYTECODE=1
 
   roles:
-    - git
+    - role: git
+      vars:
+        git_safe_directory: /vagrant
     - python
     - python-development
     - node
