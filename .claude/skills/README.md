@@ -146,6 +146,32 @@ python .claude/skills/self-documenting-refactor/scripts/find_comments.py src/
 
 ---
 
+## Spec-Driven Workflow Skills
+
+### 8. Specify
+**Directory:** `specify/`
+**Invocation:** `/specify <feature-description>` (slash-command only)
+
+**Purpose:** Defines a feature specification before implementation. Produces a structured `SPEC.md` under `.specs/<feature-name>/` with user stories, acceptance criteria, per-layer hexagonal impact, API/CLI contracts, dependency-injection needs, and observability requirements — tailored to this project's `src/colors_of_meaning/` layout.
+
+### 9. Plan
+**Directory:** `plan/`
+**Invocation:** `/plan <spec-name>` (slash-command only)
+
+**Purpose:** Turns a `SPEC.md` into a technical implementation plan saved to `.specs/<spec-name>/PLAN.md` — an inside-out (domain → application → infrastructure → interface) ordered task list, layer changes, DI registrations, and a testing strategy (assertpy, `test_should_..._when_...`, pytest-archon boundary tests, 100% coverage via `tox`). Run after `/specify`.
+
+---
+
+## Meta Skills
+
+### 10. Skill Creator
+**Directory:** `skill-creator/`
+**Trigger phrases:** "create a skill", "improve this skill", "optimize the skill description", "benchmark a skill"
+
+**Purpose:** General-purpose, project-agnostic skill for authoring, evaluating, and iterating on skills. Self-contained (bundles `scripts/`, `agents/`, `eval-viewer/`, `references/`); not tailored to this codebase and needs no project-specific changes.
+
+---
+
 ## How Claude Code Uses Skills
 
 ### Automatic Invocation
@@ -251,4 +277,4 @@ Check all skills are present:
 ls -la .claude/skills/*/SKILL.md
 ```
 
-Expected output: 7 SKILL.md files (one for each Tier 1 skill)
+Expected output: 10 SKILL.md files
