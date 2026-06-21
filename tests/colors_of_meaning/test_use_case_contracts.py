@@ -232,14 +232,27 @@ class TestCompressDocumentContract:
 
 
 class TestTrainColorMappingContract:
-    def test_should_call_train_on_color_mapper(self) -> None:
+    @staticmethod
+    def _build_mapper() -> Mock:
         mock_mapper = Mock()
-        mock_repo = Mock()
+        mock_mapper.epoch_checkpoints.return_value = ["ckpt0"]
+        mock_mapper.embed_batch_to_lab.return_value = [Mock(), Mock()]
+        return mock_mapper
 
-        use_case = TrainColorMappingUseCase(mock_mapper, mock_repo)
+    @staticmethod
+    def _build_evaluator() -> Mock:
+        mock_evaluator = Mock()
+        mock_evaluator.evaluate.return_value = -0.5
+        return mock_evaluator
+
+    def test_should_call_train_on_color_mapper(self) -> None:
+        mock_mapper = self._build_mapper()
+
+        use_case = TrainColorMappingUseCase(mock_mapper, self._build_evaluator(), Mock())
         embeddings = np.zeros((10, 8))
         use_case.execute(
             embeddings=embeddings,
+            evaluation_embeddings=embeddings,
             epochs=5,
             learning_rate=0.001,
             bins_per_dimension=2,
@@ -250,12 +263,12 @@ class TestTrainColorMappingContract:
         mock_mapper.train.assert_called_once_with(embeddings=embeddings, epochs=5, learning_rate=0.001)
 
     def test_should_save_model_weights(self) -> None:
-        mock_mapper = Mock()
-        mock_repo = Mock()
+        mock_mapper = self._build_mapper()
 
-        use_case = TrainColorMappingUseCase(mock_mapper, mock_repo)
+        use_case = TrainColorMappingUseCase(mock_mapper, self._build_evaluator(), Mock())
         use_case.execute(
             embeddings=np.zeros((10, 8)),
+            evaluation_embeddings=np.zeros((10, 8)),
             epochs=1,
             learning_rate=0.001,
             bins_per_dimension=2,
@@ -266,12 +279,12 @@ class TestTrainColorMappingContract:
         mock_mapper.save_weights.assert_called_once_with("my_model")
 
     def test_should_save_codebook_to_repository(self) -> None:
-        mock_mapper = Mock()
         mock_repo = Mock()
 
-        use_case = TrainColorMappingUseCase(mock_mapper, mock_repo)
+        use_case = TrainColorMappingUseCase(self._build_mapper(), self._build_evaluator(), mock_repo)
         use_case.execute(
             embeddings=np.zeros((10, 8)),
+            evaluation_embeddings=np.zeros((10, 8)),
             epochs=1,
             learning_rate=0.001,
             bins_per_dimension=2,
@@ -279,9 +292,7 @@ class TestTrainColorMappingContract:
             codebook_name="my_codebook",
         )
 
-        mock_repo.save.assert_called_once()
-        saved_codebook = mock_repo.save.call_args[0][0]
-        assert saved_codebook.num_bins == 8
+        assert mock_repo.save.call_args[0][0].num_bins == 8
 
 
 class TestVisualizeCodebookContract:

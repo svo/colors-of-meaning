@@ -1,29 +1,76 @@
+from typing import List, Tuple
 from unittest.mock import Mock
+
 import numpy as np
 
 from colors_of_meaning.application.use_case.train_color_mapping_use_case import TrainColorMappingUseCase
 
 
-class TestTrainColorMappingUseCase:
-    def test_should_train_mapper_and_save_artifacts(self) -> None:
-        mock_color_mapper = Mock()
-        mock_codebook_repository = Mock()
+def _build_use_case(scores: List[float]) -> Tuple[TrainColorMappingUseCase, Mock, Mock]:
+    mock_color_mapper = Mock()
+    mock_color_mapper.epoch_checkpoints.return_value = [f"ckpt{index}" for index in range(len(scores))]
+    mock_color_mapper.embed_batch_to_lab.return_value = [Mock(), Mock()]
+    mock_evaluator = Mock()
+    mock_evaluator.evaluate.side_effect = list(scores)
+    mock_codebook_repository = Mock()
+    use_case = TrainColorMappingUseCase(mock_color_mapper, mock_evaluator, mock_codebook_repository)
+    return use_case, mock_color_mapper, mock_codebook_repository
 
-        use_case = TrainColorMappingUseCase(mock_color_mapper, mock_codebook_repository)
+
+def _execute(use_case: TrainColorMappingUseCase) -> float:
+    embeddings = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    return use_case.execute(
+        embeddings=embeddings,
+        evaluation_embeddings=embeddings,
+        epochs=3,
+        learning_rate=0.001,
+        bins_per_dimension=4,
+        model_name="model.pth",
+        codebook_name="codebook",
+    )
+
+
+class TestTrainColorMappingUseCase:
+    def test_should_train_mapper_with_supplied_hyperparameters(self) -> None:
+        use_case, mock_color_mapper, _ = _build_use_case([-0.2, -0.9, -0.5])
         embeddings = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
         use_case.execute(
             embeddings=embeddings,
-            epochs=10,
+            evaluation_embeddings=embeddings,
+            epochs=3,
             learning_rate=0.001,
             bins_per_dimension=4,
-            model_name="test_model.pth",
-            codebook_name="test_codebook",
+            model_name="model.pth",
+            codebook_name="codebook",
         )
 
-        mock_color_mapper.train.assert_called_once_with(embeddings=embeddings, epochs=10, learning_rate=0.001)
-        mock_color_mapper.save_weights.assert_called_once_with("test_model.pth")
-        mock_codebook_repository.save.assert_called_once()
+        mock_color_mapper.train.assert_called_once_with(embeddings=embeddings, epochs=3, learning_rate=0.001)
 
-        saved_codebook = mock_codebook_repository.save.call_args[0][0]
-        assert saved_codebook.num_bins == 64
+    def test_should_restore_best_scoring_checkpoint_before_saving(self) -> None:
+        use_case, mock_color_mapper, _ = _build_use_case([-0.2, -0.9, -0.5])
+
+        _execute(use_case)
+
+        assert mock_color_mapper.restore_checkpoint.call_args_list[-1].args[0] == "ckpt1"
+
+    def test_should_save_best_checkpoint_weights(self) -> None:
+        use_case, mock_color_mapper, _ = _build_use_case([-0.2, -0.9, -0.5])
+
+        _execute(use_case)
+
+        mock_color_mapper.save_weights.assert_called_once_with("model.pth")
+
+    def test_should_persist_uniform_codebook(self) -> None:
+        use_case, _, mock_codebook_repository = _build_use_case([-0.2, -0.9, -0.5])
+
+        _execute(use_case)
+
+        assert mock_codebook_repository.save.call_args[0][0].num_bins == 64
+
+    def test_should_return_best_correlation(self) -> None:
+        use_case, _, _ = _build_use_case([-0.2, -0.9, -0.5])
+
+        best_correlation = _execute(use_case)
+
+        assert best_correlation == -0.9

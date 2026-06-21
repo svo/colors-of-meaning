@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, List
 import numpy.typing as npt
 import torch
 import torch.nn as nn
@@ -6,6 +6,7 @@ from pathlib import Path
 
 from colors_of_meaning.domain.model.lab_color import LabColor
 from colors_of_meaning.domain.service.color_mapper import ColorMapper
+from colors_of_meaning.shared.determinism import seed_everything
 
 
 def offdiagonal_entries(matrix: torch.Tensor) -> torch.Tensor:
@@ -55,14 +56,17 @@ class PyTorchColorMapper(ColorMapper):
         hidden_dim_2: int = 64,
         dropout_rate: float = 0.1,
         device: str = "cpu",
+        seed: int = 42,
     ) -> None:
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
+        self._generator = seed_everything(seed)
         self.network = LabProjectorNetwork(
             input_dim=input_dim,
             hidden_dim_1=hidden_dim_1,
             hidden_dim_2=hidden_dim_2,
             dropout_rate=dropout_rate,
         ).to(self.device)
+        self._epoch_checkpoints: List[Any] = []
 
     def embed_to_lab(self, embedding: npt.NDArray) -> LabColor:
         self.network.eval()
@@ -92,11 +96,22 @@ class PyTorchColorMapper(ColorMapper):
         batch_size = min(32, len(embeddings))
         num_batches = (len(embeddings) + batch_size - 1) // batch_size
 
+        self._epoch_checkpoints = []
         for epoch in range(epochs):
             avg_loss = self._train_epoch(embeddings_tensor, optimizer, batch_size, num_batches)
+            self._epoch_checkpoints.append(self._capture_state())
 
             if (epoch + 1) % 10 == 0:
                 print(f"Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
+
+    def _capture_state(self) -> dict:
+        return {key: value.clone() for key, value in self.network.state_dict().items()}
+
+    def epoch_checkpoints(self) -> List[Any]:
+        return self._epoch_checkpoints
+
+    def restore_checkpoint(self, checkpoint: Any) -> None:
+        self.network.load_state_dict(checkpoint)
 
     def _train_epoch(
         self,
@@ -106,7 +121,7 @@ class PyTorchColorMapper(ColorMapper):
         num_batches: int,
     ) -> float:
         total_loss = 0.0
-        indices = torch.randperm(len(embeddings_tensor))
+        indices = torch.randperm(len(embeddings_tensor), generator=self._generator)
 
         for i in range(num_batches):
             start_idx = i * batch_size

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, List
 import numpy.typing as npt
 
 from colors_of_meaning.domain.model.lab_color import LabColor
@@ -17,6 +17,14 @@ class ColorMapper(ABC):
 
     @abstractmethod
     def train(self, embeddings: npt.NDArray, epochs: int, learning_rate: float) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def epoch_checkpoints(self) -> List[Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def restore_checkpoint(self, checkpoint: Any) -> None:
         raise NotImplementedError
 
     @abstractmethod

@@ -26,6 +26,7 @@ def _create_unconstrained_mapper(config: SynestheticConfig) -> ColorMapper:
         hidden_dim_2=config.projector.hidden_dim_2,
         dropout_rate=config.projector.dropout_rate,
         device=config.training.device,
+        seed=config.training.seed,
     )
 
 
@@ -44,6 +45,7 @@ def _create_structured_mapper(config: SynestheticConfig) -> ColorMapper:
         gamma=structured_config.gamma,
         num_clusters=structured_config.num_clusters,
         max_chroma=structured_config.max_chroma,
+        seed=config.training.seed,
     )
 
 
@@ -59,4 +61,5 @@ def _create_supervised_mapper(config: SynestheticConfig) -> ColorMapper:
         device=config.training.device,
         num_classes=supervised_config.num_classes,
         classification_weight=supervised_config.classification_weight,
+        seed=config.training.seed,
     )

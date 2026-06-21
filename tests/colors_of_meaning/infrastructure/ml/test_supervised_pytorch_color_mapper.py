@@ -159,6 +159,39 @@ class TestSupervisedTraining:
 
         assert True
 
+    def test_should_reproduce_lab_output_when_same_seed(self) -> None:
+        embedding = np.arange(10, dtype=np.float32)
+
+        first = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", seed=77).embed_to_lab(embedding)
+        second = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", seed=77).embed_to_lab(embedding)
+
+        assert first.to_tuple() == second.to_tuple()
+
+    def test_should_capture_one_checkpoint_per_epoch(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2)
+        embeddings = np.random.randn(20, 10).astype(np.float32)
+        labels = np.array([0, 1] * 10)
+
+        mapper.set_training_labels(labels)
+        mapper.train(embeddings, epochs=4, learning_rate=0.001)
+
+        assert len(mapper.epoch_checkpoints()) == 4
+
+    def test_should_restore_checkpoint_weights_deterministically(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2, seed=9)
+        embeddings = np.random.randn(20, 10).astype(np.float32)
+        labels = np.array([0, 1] * 10)
+        mapper.set_training_labels(labels)
+        mapper.train(embeddings, epochs=3, learning_rate=0.01)
+        embedding = np.arange(10, dtype=np.float32)
+
+        mapper.restore_checkpoint(mapper.epoch_checkpoints()[0])
+        first = mapper.embed_to_lab(embedding)
+        mapper.restore_checkpoint(mapper.epoch_checkpoints()[0])
+        second = mapper.embed_to_lab(embedding)
+
+        assert first.to_tuple() == second.to_tuple()
+
 
 class TestSupervisedLoss:
     def test_should_compute_combined_loss(self) -> None:

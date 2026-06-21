@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 import numpy.typing as npt
 import torch
 import torch.nn as nn
@@ -10,6 +10,7 @@ from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import (
     LabProjectorNetwork,
     offdiagonal_entries,
 )
+from colors_of_meaning.shared.determinism import seed_everything
 
 
 class SupervisedPyTorchColorMapper(ColorMapper):
@@ -23,11 +24,13 @@ class SupervisedPyTorchColorMapper(ColorMapper):
         num_classes: int = 4,
         classification_weight: float = 0.1,
         contrastive_margin: float = 1.0,
+        seed: int = 42,
     ) -> None:
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
         self.num_classes = num_classes
         self.classification_weight = classification_weight
         self.contrastive_margin = contrastive_margin
+        self._generator = seed_everything(seed)
         self.network = LabProjectorNetwork(
             input_dim=input_dim,
             hidden_dim_1=hidden_dim_1,
@@ -36,6 +39,7 @@ class SupervisedPyTorchColorMapper(ColorMapper):
         ).to(self.device)
         self.classification_head = nn.Linear(3, num_classes).to(self.device)
         self._training_labels: Optional[torch.Tensor] = None
+        self._epoch_checkpoints: List[Any] = []
 
     def set_training_labels(self, labels: npt.NDArray) -> None:
         self._training_labels = torch.tensor(labels, dtype=torch.long, device=self.device)
@@ -85,6 +89,7 @@ class SupervisedPyTorchColorMapper(ColorMapper):
         batch_size = min(32, len(embeddings))
         num_batches = (len(embeddings) + batch_size - 1) // batch_size
 
+        self._epoch_checkpoints = []
         best_state = self._run_training_loop(
             embeddings_tensor,
             optimizer,
@@ -96,6 +101,15 @@ class SupervisedPyTorchColorMapper(ColorMapper):
 
         if best_state is not None:
             self.network.load_state_dict(best_state)
+
+    def _capture_state(self) -> dict:
+        return {key: value.clone() for key, value in self.network.state_dict().items()}
+
+    def epoch_checkpoints(self) -> List[Any]:
+        return self._epoch_checkpoints
+
+    def restore_checkpoint(self, checkpoint: Any) -> None:
+        self.network.load_state_dict(checkpoint)
 
     def _run_training_loop(
         self,
@@ -114,6 +128,7 @@ class SupervisedPyTorchColorMapper(ColorMapper):
             scheduler.step()
 
             best_loss, best_state = self._checkpoint_if_improved(avg_loss, best_loss, best_state)
+            self._epoch_checkpoints.append(self._capture_state())
 
             if (epoch + 1) % 10 == 0:
                 print(f"Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
@@ -128,7 +143,7 @@ class SupervisedPyTorchColorMapper(ColorMapper):
         num_batches: int,
     ) -> float:
         total_loss = 0.0
-        indices = torch.randperm(len(embeddings_tensor))
+        indices = torch.randperm(len(embeddings_tensor), generator=self._generator)
 
         for i in range(num_batches):
             start_idx = i * batch_size

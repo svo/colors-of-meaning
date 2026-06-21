@@ -6,6 +6,8 @@ import pytest
 from colors_of_meaning.interface.cli.train import (
     main,
     TrainArgs,
+    _apply_determinism,
+    _select_evaluation_embeddings,
     _create_color_mapper,
     _create_dataset_adapter,
     _load_supervised_data,
@@ -31,6 +33,7 @@ class TestCreateColorMapper:
         mock_config.projector.hidden_dim_2 = 4
         mock_config.projector.dropout_rate = 0.1
         mock_config.training.device = "cpu"
+        mock_config.training.seed = 42
 
         args = TrainArgs(mapper_type="unconstrained")
 
@@ -46,6 +49,7 @@ class TestCreateColorMapper:
         mock_config.projector.hidden_dim_2 = 4
         mock_config.projector.dropout_rate = 0.1
         mock_config.training.device = "cpu"
+        mock_config.training.seed = 42
         mock_config.structured_mapper.alpha = 1.0
         mock_config.structured_mapper.beta = 1.0
         mock_config.structured_mapper.gamma = 1.0
@@ -75,6 +79,7 @@ class TestCreateColorMapper:
         mock_config.projector.hidden_dim_2 = 4
         mock_config.projector.dropout_rate = 0.1
         mock_config.training.device = "cpu"
+        mock_config.training.seed = 42
         mock_config.supervised_mapper.classification_weight = 0.1
         mock_config.supervised_mapper.num_classes = 4
 
@@ -189,16 +194,18 @@ class TestExecuteTraining:
         mock_repo_class: Mock,
     ) -> None:
         mock_use_case = Mock()
+        mock_use_case.execute.return_value = -0.5
         mock_use_case_class.return_value = mock_use_case
 
         mock_config = Mock()
         mock_config.training.epochs = 10
         mock_config.training.learning_rate = 0.001
+        mock_config.training.seed = 42
         mock_config.codebook.bins_per_dimension = 4
 
         args = TrainArgs()
         mock_mapper = Mock()
-        embeddings = np.array([[1.0, 2.0]])
+        embeddings = np.array([[1.0, 2.0], [3.0, 4.0]])
 
         _execute_training(args, mock_config, mock_mapper, embeddings)
 
@@ -229,6 +236,7 @@ class TestTrainCLI:
         mock_config.training.epochs = 10
         mock_config.training.learning_rate = 0.001
         mock_config.training.device = "cpu"
+        mock_config.training.seed = 42
         mock_config.codebook.bins_per_dimension = 4
         mock_config.projector.embedding_dim = 384
         mock_config.projector.hidden_dim_1 = 128
@@ -247,6 +255,7 @@ class TestTrainCLI:
         mock_repo_class.return_value = mock_repo
 
         mock_use_case = Mock()
+        mock_use_case.execute.return_value = -0.5
         mock_use_case_class.return_value = mock_use_case
 
         config_path = tmp_path / "config.yaml"
@@ -289,6 +298,7 @@ class TestTrainCLI:
     ) -> None:
         mock_config = Mock()
         mock_config.training.batch_size = 32
+        mock_config.training.seed = 42
         mock_config.dataset.name = "ag_news"
         mock_config_class.from_yaml.return_value = mock_config
 
@@ -313,3 +323,40 @@ class TestTrainCLI:
 
         mock_load_supervised.assert_called_once_with(mock_config)
         assert mock_mapper._training_labels is not None
+
+
+class TestApplyDeterminism:
+    def test_should_enable_deterministic_algorithms_when_flag_is_set(self) -> None:
+        mock_config = Mock()
+        mock_config.training.seed = 42
+
+        with patch("torch.use_deterministic_algorithms") as mock_use_deterministic:
+            _apply_determinism(TrainArgs(deterministic=True), mock_config)
+
+        mock_use_deterministic.assert_called_once_with(True)
+
+    def test_should_not_enable_deterministic_algorithms_by_default(self) -> None:
+        mock_config = Mock()
+        mock_config.training.seed = 42
+
+        with patch("torch.use_deterministic_algorithms") as mock_use_deterministic:
+            _apply_determinism(TrainArgs(), mock_config)
+
+        mock_use_deterministic.assert_not_called()
+
+
+class TestSelectEvaluationEmbeddings:
+    def test_should_select_evaluation_embeddings_deterministically(self) -> None:
+        embeddings = np.arange(40, dtype=np.float32).reshape(20, 2)
+
+        first = _select_evaluation_embeddings(embeddings, seed=5)
+        second = _select_evaluation_embeddings(embeddings, seed=5)
+
+        assert np.array_equal(first, second)
+
+    def test_should_cap_evaluation_embeddings_to_maximum(self) -> None:
+        embeddings = np.arange(40, dtype=np.float32).reshape(20, 2)
+
+        selected = _select_evaluation_embeddings(embeddings, seed=5, max_evaluation_samples=8)
+
+        assert len(selected) == 8

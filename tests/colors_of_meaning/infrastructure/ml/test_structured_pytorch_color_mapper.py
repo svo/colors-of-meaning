@@ -131,6 +131,35 @@ class TestStructuredPyTorchColorMapper:
 
         assert isinstance(result, LabColor)
 
+    def test_should_reproduce_lab_output_when_same_seed(self) -> None:
+        embedding = np.arange(10, dtype=np.float32)
+
+        first = StructuredPyTorchColorMapper(input_dim=10, device="cpu", seed=321).embed_to_lab(embedding)
+        second = StructuredPyTorchColorMapper(input_dim=10, device="cpu", seed=321).embed_to_lab(embedding)
+
+        assert first.to_tuple() == second.to_tuple()
+
+    def test_should_capture_one_checkpoint_per_epoch(self) -> None:
+        mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", num_clusters=3)
+        embeddings = np.random.randn(20, 10).astype(np.float32)
+
+        mapper.train(embeddings, epochs=4, learning_rate=0.001)
+
+        assert len(mapper.epoch_checkpoints()) == 4
+
+    def test_should_restore_checkpoint_weights_deterministically(self) -> None:
+        mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", num_clusters=3, seed=8)
+        embeddings = np.random.randn(20, 10).astype(np.float32)
+        mapper.train(embeddings, epochs=3, learning_rate=0.01)
+        embedding = np.arange(10, dtype=np.float32)
+
+        mapper.restore_checkpoint(mapper.epoch_checkpoints()[0])
+        first = mapper.embed_to_lab(embedding)
+        mapper.restore_checkpoint(mapper.epoch_checkpoints()[0])
+        second = mapper.embed_to_lab(embedding)
+
+        assert first.to_tuple() == second.to_tuple()
+
 
 class TestStructuredTargetDerivation:
     def test_should_derive_hue_targets(self) -> None:

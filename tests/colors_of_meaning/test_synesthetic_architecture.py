@@ -74,6 +74,35 @@ def test_should_keep_dataset_infrastructure_independent_of_upper_layers() -> Non
     )
 
 
+def test_should_keep_structure_metric_numerical_dependencies_out_of_domain() -> None:
+    (
+        archrule(
+            "Structure Metric Dependency Isolation",
+            comment="The scipy-backed structure-preservation metric must stay out of the domain layer",
+        )
+        .match("colors_of_meaning.domain.*")
+        .should_not_import(
+            "scipy",
+            "scipy.*",
+            "torch",
+            "torch.*",
+        )
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_confine_structure_preservation_evaluator_scipy_to_infrastructure() -> None:
+    (
+        archrule(
+            "Structure Preservation Evaluator Infrastructure",
+            comment="The Spearman evaluator implementation lives in infrastructure and may depend on scipy",
+        )
+        .match("colors_of_meaning.infrastructure.evaluation.structure_preservation_evaluator")
+        .should_import("scipy.stats")
+        .check("colors_of_meaning")
+    )
+
+
 def test_should_maintain_shared_module_independence() -> None:
     (
         archrule(

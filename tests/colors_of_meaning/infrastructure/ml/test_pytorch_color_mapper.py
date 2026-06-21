@@ -179,3 +179,32 @@ class TestPyTorchColorMapper:
         mapper.train(embeddings, epochs=10, learning_rate=0.001)
 
         assert True
+
+    def test_should_reproduce_lab_output_when_same_seed(self) -> None:
+        embedding = np.arange(10, dtype=np.float32)
+
+        first = PyTorchColorMapper(input_dim=10, device="cpu", seed=123).embed_to_lab(embedding)
+        second = PyTorchColorMapper(input_dim=10, device="cpu", seed=123).embed_to_lab(embedding)
+
+        assert first.to_tuple() == second.to_tuple()
+
+    def test_should_capture_one_checkpoint_per_epoch(self) -> None:
+        mapper = PyTorchColorMapper(input_dim=10, device="cpu")
+        embeddings = np.random.randn(12, 10).astype(np.float32)
+
+        mapper.train(embeddings, epochs=3, learning_rate=0.001)
+
+        assert len(mapper.epoch_checkpoints()) == 3
+
+    def test_should_restore_checkpoint_weights_deterministically(self) -> None:
+        mapper = PyTorchColorMapper(input_dim=10, device="cpu", seed=5)
+        embeddings = np.random.randn(12, 10).astype(np.float32)
+        mapper.train(embeddings, epochs=2, learning_rate=0.05)
+        embedding = np.arange(10, dtype=np.float32)
+
+        mapper.restore_checkpoint(mapper.epoch_checkpoints()[0])
+        first = mapper.embed_to_lab(embedding)
+        mapper.restore_checkpoint(mapper.epoch_checkpoints()[0])
+        second = mapper.embed_to_lab(embedding)
+
+        assert first.to_tuple() == second.to_tuple()

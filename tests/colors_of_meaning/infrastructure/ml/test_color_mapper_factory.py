@@ -22,6 +22,7 @@ class TestCreateColorMapper:
         mock_config.projector.hidden_dim_2 = 4
         mock_config.projector.dropout_rate = 0.1
         mock_config.training.device = "cpu"
+        mock_config.training.seed = 42
         mock_config.structured_mapper.alpha = 1.0
         mock_config.structured_mapper.beta = 1.0
         mock_config.structured_mapper.gamma = 1.0
