@@ -71,6 +71,14 @@ class TestSupervisedPyTorchColorMapper:
 
         assert mapper.device.type == "cpu"
 
+    def test_should_initialize_with_contrastive_margin(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", contrastive_margin=2.5)
+
+        assert mapper.contrastive_margin == 2.5
+
+    def test_should_remove_generate_targets_from_supervised_mapper_when_refactored(self) -> None:
+        assert not hasattr(SupervisedPyTorchColorMapper, "_generate_targets")
+
 
 class TestSupervisedLabelHandling:
     def test_should_set_training_labels(self) -> None:
@@ -99,7 +107,7 @@ class TestSupervisedLabelHandling:
 
 
 class TestSupervisedTraining:
-    def test_should_train_with_labels_and_reduce_loss(self) -> None:
+    def test_should_train_supervised_with_contrastive_objective_when_labels_set(self) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=3)
         embeddings = np.random.randn(30, 10).astype(np.float32)
         labels = np.array([0, 1, 2] * 10)
@@ -156,11 +164,10 @@ class TestSupervisedLoss:
     def test_should_compute_combined_loss(self) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=3)
 
-        lab_output = torch.tensor([[50.0, 10.0, -20.0]], requires_grad=True)
-        targets = torch.tensor([[60.0, 15.0, -10.0]])
-        labels = torch.tensor([1])
+        lab_output = torch.tensor([[50.0, 10.0, -20.0], [20.0, -5.0, 15.0]], requires_grad=True)
+        labels = torch.tensor([1, 0])
 
-        loss = mapper._compute_combined_loss(lab_output, targets, labels)
+        loss = mapper._compute_combined_loss(lab_output, labels)
 
         assert loss.item() > 0
 
@@ -172,37 +179,78 @@ class TestSupervisedLoss:
 
         mapper_low.classification_head.load_state_dict(mapper_high.classification_head.state_dict())
 
-        lab_output = torch.tensor([[50.0, 10.0, -20.0]])
-        targets = torch.tensor([[50.0, 10.0, -20.0]])
-        labels = torch.tensor([1])
+        lab_output = torch.tensor([[50.0, 10.0, -20.0], [20.0, -5.0, 15.0]])
+        labels = torch.tensor([1, 0])
 
-        loss_high = mapper_high._compute_combined_loss(lab_output, targets, labels)
-        loss_low = mapper_low._compute_combined_loss(lab_output, targets, labels)
+        loss_high = mapper_high._compute_combined_loss(lab_output, labels)
+        loss_low = mapper_low._compute_combined_loss(lab_output, labels)
 
         assert loss_high.item() > loss_low.item()
 
     def test_should_produce_zero_classification_loss_weight(self) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=3, classification_weight=0.0)
 
+        lab_output = torch.tensor([[50.0, 10.0, -20.0], [20.0, -5.0, 15.0]])
+        labels = torch.tensor([1, 0])
+
+        loss = mapper._compute_combined_loss(lab_output, labels)
+        contrastive_only = mapper._contrastive_loss(lab_output, labels)
+
+        assert abs(loss.item() - contrastive_only.item()) < 1e-6
+
+    def test_should_penalise_same_class_separation_when_contrastive(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2)
+        labels = torch.tensor([0, 0])
+        colocated = torch.tensor([[50.0, 10.0, -20.0], [50.0, 10.0, -20.0]])
+        separated = torch.tensor([[0.0, -127.5, -127.5], [100.0, 127.5, 127.5]])
+
+        colocated_loss = mapper._contrastive_loss(colocated, labels)
+        separated_loss = mapper._contrastive_loss(separated, labels)
+
+        assert separated_loss.item() > colocated_loss.item()
+
+    def test_should_repel_different_class_within_margin_when_contrastive(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2)
+        labels = torch.tensor([0, 1])
+        colocated = torch.tensor([[50.0, 10.0, -20.0], [50.0, 10.0, -20.0]])
+
+        loss = mapper._contrastive_loss(colocated, labels)
+
+        assert loss.item() > 0.0
+
+    def test_should_return_zero_contrastive_loss_when_single_sample(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2)
+        labels = torch.tensor([0])
         lab_output = torch.tensor([[50.0, 10.0, -20.0]])
-        targets = torch.tensor([[60.0, 15.0, -10.0]])
-        labels = torch.tensor([1])
 
-        loss = mapper._compute_combined_loss(lab_output, targets, labels)
-        projection_only = torch.nn.functional.mse_loss(lab_output, targets)
+        loss = mapper._contrastive_loss(lab_output, labels)
 
-        assert abs(loss.item() - projection_only.item()) < 1e-6
+        assert loss.item() == 0.0
 
-    def test_should_compute_projection_loss_component(self) -> None:
-        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=3, classification_weight=0.0)
+    def test_should_keep_classification_term_influential_when_losses_combined(self) -> None:
+        torch.manual_seed(0)
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=3)
+        lab_output = mapper.network(torch.randn(12, 10))
+        labels = torch.tensor([0, 1, 2] * 4)
 
-        lab_output = torch.tensor([[50.0, 10.0, -20.0]])
-        targets = torch.tensor([[50.0, 10.0, -20.0]])
-        labels = torch.tensor([1])
+        structure = mapper._contrastive_loss(lab_output, labels).item()
+        classification = (
+            mapper.classification_weight
+            * torch.nn.functional.cross_entropy(mapper.classification_head(lab_output), labels).item()
+        )
 
-        loss = mapper._compute_combined_loss(lab_output, targets, labels)
+        assert max(structure, classification) < 100.0 * min(structure, classification)
 
-        assert loss.item() < 1e-6
+    def test_should_scale_normalise_lab_into_unit_range_when_normalising(self) -> None:
+        lab_output = torch.tensor([[100.0, 127.5, -127.5], [0.0, -127.5, 127.5]])
+
+        normalised = SupervisedPyTorchColorMapper._normalise_lab(lab_output)
+
+        assert (
+            torch.all(normalised[:, 0] >= 0.0)
+            and torch.all(normalised[:, 0] <= 1.0)
+            and torch.all(normalised[:, 1:].abs() <= 1.0)
+        )
 
 
 class TestSupervisedCheckpointing:
@@ -227,6 +275,14 @@ class TestSupervisedCheckpointing:
 
         result = mapper.embed_to_lab(embeddings[0])
         assert isinstance(result, LabColor)
+
+    def test_should_keep_previous_best_when_loss_not_improved(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2)
+        previous_best = {"marker": 1}
+
+        result = mapper._checkpoint_if_improved(avg_loss=5.0, best_loss=1.0, best_state=previous_best)
+
+        assert result == (1.0, previous_best)
 
     def test_should_skip_restore_when_best_state_is_none(self) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2)

@@ -260,3 +260,13 @@ class TestStructuredLossComputation:
         loss_low = mapper_low_alpha._compute_loss(pred_l, pred_hue, pred_chroma, target_l, target_hue, target_chroma)
 
         assert loss_high.item() > loss_low.item()
+
+
+class TestStructuredCheckpointing:
+    def test_should_keep_previous_best_when_loss_not_improved(self) -> None:
+        mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu")
+        previous_best = {"marker": 1}
+
+        result = mapper._checkpoint_if_improved(avg_loss=5.0, best_loss=1.0, best_state=previous_best)
+
+        assert result == (1.0, previous_best)

@@ -8,6 +8,7 @@ from colors_of_meaning.domain.model.lab_color import LabColor
 from colors_of_meaning.domain.service.color_mapper import ColorMapper
 from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import (
     LabProjectorNetwork,
+    offdiagonal_entries,
 )
 
 
@@ -21,10 +22,12 @@ class SupervisedPyTorchColorMapper(ColorMapper):
         device: str = "cpu",
         num_classes: int = 4,
         classification_weight: float = 0.1,
+        contrastive_margin: float = 1.0,
     ) -> None:
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
         self.num_classes = num_classes
         self.classification_weight = classification_weight
+        self.contrastive_margin = contrastive_margin
         self.network = LabProjectorNetwork(
             input_dim=input_dim,
             hidden_dim_1=hidden_dim_1,
@@ -74,7 +77,6 @@ class SupervisedPyTorchColorMapper(ColorMapper):
         self.classification_head.train()
 
         embeddings_tensor = torch.tensor(embeddings, dtype=torch.float32, device=self.device)
-        projection_targets = self._generate_targets(embeddings_tensor)
 
         all_params = list(self.network.parameters()) + list(self.classification_head.parameters())
         optimizer = torch.optim.AdamW(all_params, lr=learning_rate, weight_decay=0.01)
@@ -85,7 +87,6 @@ class SupervisedPyTorchColorMapper(ColorMapper):
 
         best_state = self._run_training_loop(
             embeddings_tensor,
-            projection_targets,
             optimizer,
             scheduler,
             batch_size,
@@ -99,7 +100,6 @@ class SupervisedPyTorchColorMapper(ColorMapper):
     def _run_training_loop(
         self,
         embeddings_tensor: torch.Tensor,
-        projection_targets: torch.Tensor,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
         batch_size: int,
@@ -110,7 +110,7 @@ class SupervisedPyTorchColorMapper(ColorMapper):
         best_state: Optional[dict] = None
 
         for epoch in range(epochs):
-            avg_loss = self._train_epoch(embeddings_tensor, projection_targets, optimizer, batch_size, num_batches)
+            avg_loss = self._train_epoch(embeddings_tensor, optimizer, batch_size, num_batches)
             scheduler.step()
 
             best_loss, best_state = self._checkpoint_if_improved(avg_loss, best_loss, best_state)
@@ -123,7 +123,6 @@ class SupervisedPyTorchColorMapper(ColorMapper):
     def _train_epoch(
         self,
         embeddings_tensor: torch.Tensor,
-        projection_targets: torch.Tensor,
         optimizer: torch.optim.Optimizer,
         batch_size: int,
         num_batches: int,
@@ -138,7 +137,6 @@ class SupervisedPyTorchColorMapper(ColorMapper):
 
             total_loss += self._train_batch(
                 embeddings_tensor[batch_indices],
-                projection_targets[batch_indices],
                 self._training_labels[batch_indices],  # type: ignore[index]
                 optimizer,
             )
@@ -148,14 +146,13 @@ class SupervisedPyTorchColorMapper(ColorMapper):
     def _train_batch(
         self,
         batch_embeddings: torch.Tensor,
-        batch_projection_targets: torch.Tensor,
         batch_labels: torch.Tensor,
         optimizer: torch.optim.Optimizer,
     ) -> float:
         optimizer.zero_grad()
 
         lab_output = self.network(batch_embeddings)
-        loss = self._compute_combined_loss(lab_output, batch_projection_targets, batch_labels)
+        loss = self._compute_combined_loss(lab_output, batch_labels)
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(
@@ -169,15 +166,35 @@ class SupervisedPyTorchColorMapper(ColorMapper):
     def _compute_combined_loss(
         self,
         lab_output: torch.Tensor,
-        projection_targets: torch.Tensor,
         labels: torch.Tensor,
     ) -> torch.Tensor:
-        projection_loss = nn.functional.mse_loss(lab_output, projection_targets)
+        structure_loss = self._contrastive_loss(lab_output, labels)
 
         class_logits = self.classification_head(lab_output)
         classification_loss = nn.functional.cross_entropy(class_logits, labels)
 
-        return projection_loss + self.classification_weight * classification_loss
+        return structure_loss + self.classification_weight * classification_loss
+
+    def _contrastive_loss(self, lab_output: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        normalised_lab = self._normalise_lab(lab_output)
+        distances = torch.cdist(normalised_lab, normalised_lab)
+
+        same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
+        attraction = distances**2
+        repulsion = torch.clamp(self.contrastive_margin - distances, min=0.0) ** 2
+        pair_loss = torch.where(same_label, attraction, repulsion)
+
+        offdiagonal = offdiagonal_entries(pair_loss)
+        if offdiagonal.numel() == 0:
+            return lab_output.sum() * 0.0
+
+        return offdiagonal.mean()
+
+    @staticmethod
+    def _normalise_lab(lab_output: torch.Tensor) -> torch.Tensor:
+        lightness = lab_output[:, 0:1] / 100.0
+        chroma = lab_output[:, 1:3] / 127.5
+        return torch.cat([lightness, chroma], dim=1)
 
     def _checkpoint_if_improved(
         self,
@@ -196,13 +213,3 @@ class SupervisedPyTorchColorMapper(ColorMapper):
     def load_weights(self, path: str) -> None:
         self.network.load_state_dict(torch.load(path, map_location=self.device, weights_only=True))
         self.network.eval()
-
-    @staticmethod
-    def _generate_targets(embeddings: torch.Tensor) -> torch.Tensor:
-        batch_size = embeddings.shape[0]
-
-        l_values = torch.rand(batch_size, 1) * 100.0
-        a_values = torch.rand(batch_size, 1) * 255.0 - 128.0
-        b_values = torch.rand(batch_size, 1) * 255.0 - 128.0
-
-        return torch.cat([l_values, a_values, b_values], dim=1)
