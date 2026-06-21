@@ -189,9 +189,10 @@ def _create_classifier(args: VisualizeArgs, config: SynestheticConfig):  # type:
             raise FileNotFoundError(f"Codebook not found: {args.codebook_name}")
         quantized_mapper = QuantizedColorMapper(color_mapper, codebook)
         encode_use_case = EncodeDocumentUseCase(quantized_mapper)
-        return ColorHistogramClassifier(
-            embedding_adapter, encode_use_case, WassersteinDistanceCalculator(), k=args.k_neighbors
+        distance_calculator = WassersteinDistanceCalculator(
+            codebook=codebook, sinkhorn_reg=config.distance.sinkhorn_reg
         )
+        return ColorHistogramClassifier(embedding_adapter, encode_use_case, distance_calculator, k=args.k_neighbors)
     elif args.method == "tfidf":
         return TFIDFClassifier()
     elif args.method == "hnsw":

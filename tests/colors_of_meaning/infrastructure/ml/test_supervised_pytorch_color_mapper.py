@@ -249,7 +249,7 @@ class TestSupervisedWeightPersistence:
 
         mapper.save_weights(str(save_path))
 
-        saved_state = torch.load(str(save_path), weights_only=True)
+        saved_state = torch.load(str(save_path), weights_only=True)  # nosemgrep
         assert all("classification" not in key for key in saved_state.keys())
 
     def test_should_load_projector_weights(self, tmp_path: Path) -> None:
@@ -268,6 +268,6 @@ class TestSupervisedWeightPersistence:
 
         mapper.save_weights(str(save_path))
 
-        saved_state = torch.load(str(save_path), weights_only=True)
+        saved_state = torch.load(str(save_path), weights_only=True)  # nosemgrep
         classification_keys = [k for k in saved_state.keys() if "classification" in k]
         assert len(classification_keys) == 0

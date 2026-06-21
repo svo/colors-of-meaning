@@ -254,14 +254,14 @@ class TestRenderDocumentHistograms:
 
 
 class TestRenderTsneProjection:
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.TSNE")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_run_tsne_on_histograms(
         self,
         mock_plt: Mock,
         mock_tsne_class: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()
@@ -269,7 +269,7 @@ class TestRenderTsneProjection:
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
         mock_cmap = MagicMock()
         mock_cmap.return_value = np.array([[1, 0, 0, 1], [0, 1, 0, 1]])
-        mock_get_cmap.return_value = mock_cmap
+        mock_colormaps.__getitem__.return_value = mock_cmap
 
         mock_tsne = Mock()
         mock_tsne.fit_transform.return_value = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -289,14 +289,14 @@ class TestRenderTsneProjection:
 
         mock_tsne_class.assert_called_once_with(n_components=2, perplexity=30, random_state=42)
 
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.TSNE")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_create_scatter_plot_for_each_class(
         self,
         mock_plt: Mock,
         mock_tsne_class: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()
@@ -304,7 +304,7 @@ class TestRenderTsneProjection:
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
         mock_cmap = MagicMock()
         mock_cmap.return_value = np.array([[1, 0, 0, 1], [0, 1, 0, 1]])
-        mock_get_cmap.return_value = mock_cmap
+        mock_colormaps.__getitem__.return_value = mock_cmap
 
         mock_tsne = Mock()
         mock_tsne.fit_transform.return_value = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -324,14 +324,14 @@ class TestRenderTsneProjection:
 
         assert mock_ax.scatter.call_count == 2
 
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.TSNE")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_set_title_and_labels_for_projection(
         self,
         mock_plt: Mock,
         mock_tsne_class: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()
@@ -339,7 +339,7 @@ class TestRenderTsneProjection:
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
         mock_cmap = MagicMock()
         mock_cmap.return_value = np.array([[1, 0, 0, 1], [0, 1, 0, 1]])
-        mock_get_cmap.return_value = mock_cmap
+        mock_colormaps.__getitem__.return_value = mock_cmap
 
         mock_tsne = Mock()
         mock_tsne.fit_transform.return_value = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -359,14 +359,14 @@ class TestRenderTsneProjection:
 
         mock_ax.set_title.assert_called_once_with("t-SNE Projection of Color Histograms")
 
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.TSNE")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_save_projection_figure_to_file(
         self,
         mock_plt: Mock,
         mock_tsne_class: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()
@@ -374,7 +374,7 @@ class TestRenderTsneProjection:
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
         mock_cmap = MagicMock()
         mock_cmap.return_value = np.array([[1, 0, 0, 1], [0, 1, 0, 1]])
-        mock_get_cmap.return_value = mock_cmap
+        mock_colormaps.__getitem__.return_value = mock_cmap
 
         mock_tsne = Mock()
         mock_tsne.fit_transform.return_value = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -396,14 +396,14 @@ class TestRenderTsneProjection:
 
 
 class TestRenderConfusionMatrix:
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.confusion_matrix")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_compute_confusion_matrix(
         self,
         mock_plt: Mock,
         mock_cm_fn: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()
@@ -421,14 +421,14 @@ class TestRenderConfusionMatrix:
 
         mock_cm_fn.assert_called_once_with([0, 0, 1, 1], [0, 1, 0, 1])
 
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.confusion_matrix")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_display_confusion_matrix_as_heatmap(
         self,
         mock_plt: Mock,
         mock_cm_fn: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()
@@ -446,14 +446,14 @@ class TestRenderConfusionMatrix:
 
         mock_ax.imshow.assert_called_once()
 
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.confusion_matrix")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_annotate_confusion_matrix_cells(
         self,
         mock_plt: Mock,
         mock_cm_fn: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()
@@ -471,14 +471,14 @@ class TestRenderConfusionMatrix:
 
         assert mock_ax.text.call_count == 4
 
-    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.get_cmap")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.confusion_matrix")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
     def test_should_save_confusion_matrix_figure_to_file(
         self,
         mock_plt: Mock,
         mock_cm_fn: Mock,
-        mock_get_cmap: Mock,
+        mock_colormaps: Mock,
         tmp_path: Path,
     ) -> None:
         mock_fig = Mock()

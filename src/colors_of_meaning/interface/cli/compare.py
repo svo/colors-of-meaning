@@ -12,9 +12,14 @@ from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import 
 from colors_of_meaning.infrastructure.ml.jensen_shannon_distance_calculator import (
     JensenShannonDistanceCalculator,
 )
+from colors_of_meaning.infrastructure.persistence.file_color_codebook_repository import (
+    FileColorCodebookRepository,
+)
 from colors_of_meaning.application.use_case.compare_documents_use_case import (
     CompareDocumentsUseCase,
 )
+
+DEFAULT_CODEBOOK_NAME = "codebook_4096"
 
 
 @dataclass
@@ -25,6 +30,15 @@ class CompareArgs:
     query_index: int = 0
 
 
+def _create_distance_calculator(config: SynestheticConfig) -> DistanceCalculator:
+    if config.distance.metric != "wasserstein":
+        return JensenShannonDistanceCalculator(smoothing_epsilon=config.distance.smoothing_epsilon)
+    codebook = FileColorCodebookRepository().load(DEFAULT_CODEBOOK_NAME)
+    if codebook is None:
+        raise FileNotFoundError(f"Codebook not found: {DEFAULT_CODEBOOK_NAME}")
+    return WassersteinDistanceCalculator(codebook=codebook, sinkhorn_reg=config.distance.sinkhorn_reg)
+
+
 def main(args: CompareArgs) -> None:
     config = SynestheticConfig.from_yaml(args.config)
 
@@ -32,16 +46,11 @@ def main(args: CompareArgs) -> None:
     with open(args.encoded_documents, "rb") as f:
         documents: List[ColoredDocument] = pickle.load(f)  # nosec B301 nosemgrep
 
-    distance_calculator: DistanceCalculator
-    if config.distance.metric == "wasserstein":
-        distance_calculator = WassersteinDistanceCalculator()
-    else:
-        distance_calculator = JensenShannonDistanceCalculator(smoothing_epsilon=config.distance.smoothing_epsilon)
-
-    use_case = CompareDocumentsUseCase(distance_calculator)
-
     if args.query_index >= len(documents):
         raise ValueError(f"Query index {args.query_index} out of range")
+
+    distance_calculator = _create_distance_calculator(config)
+    use_case = CompareDocumentsUseCase(distance_calculator)
 
     query_doc = documents[args.query_index]
     print(f"\nQuery document: {query_doc.document_id}")

@@ -32,6 +32,7 @@ class TrainingConfig:
 class DistanceConfig:
     metric: str = "wasserstein"
     smoothing_epsilon: float = 1e-8
+    sinkhorn_reg: Optional[float] = None
 
 
 @dataclass

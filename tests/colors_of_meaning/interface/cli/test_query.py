@@ -84,6 +84,7 @@ class TestQueryCLI:
         main(args)
 
         mock_query.execute.assert_called_once()
+        mock_distance_class.assert_called_once_with(codebook=mock_repo.load.return_value)
 
     @patch("colors_of_meaning.interface.cli.query.FileColorCodebookRepository")
     @patch("builtins.open", new_callable=mock_open)

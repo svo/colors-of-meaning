@@ -439,6 +439,9 @@ class TestCreateClassifier:
         result = _create_classifier(args, mock_config)
 
         assert result == mock_classifier
+        mock_wasserstein_class.assert_called_once_with(
+            codebook=mock_codebook, sinkhorn_reg=mock_config.distance.sinkhorn_reg
+        )
 
     @patch("colors_of_meaning.interface.cli.visualize.FileColorCodebookRepository")
     @patch("colors_of_meaning.interface.cli.visualize.PyTorchColorMapper")

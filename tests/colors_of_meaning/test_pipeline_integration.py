@@ -158,11 +158,12 @@ class TestEncodeComparePipeline:
     def test_should_compute_distance_between_encoded_documents(
         self,
         encode_use_case: EncodeDocumentUseCase,
+        small_codebook: ColorCodebook,
     ) -> None:
         rng = np.random.default_rng(42)
         doc1 = encode_use_case.execute(rng.standard_normal((5, 8)).astype(np.float32), document_id="doc_0")
         doc2 = encode_use_case.execute(rng.standard_normal((5, 8)).astype(np.float32), document_id="doc_1")
-        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator())
+        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator(codebook=small_codebook))
 
         distance = compare_use_case.execute(doc1, doc2)
 
@@ -172,9 +173,10 @@ class TestEncodeComparePipeline:
         self,
         encode_use_case: EncodeDocumentUseCase,
         synthetic_embeddings: np.ndarray,
+        small_codebook: ColorCodebook,
     ) -> None:
         document = encode_use_case.execute(synthetic_embeddings, document_id="doc_0")
-        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator())
+        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator(codebook=small_codebook))
 
         distance = compare_use_case.execute(document, document)
 
@@ -183,6 +185,7 @@ class TestEncodeComparePipeline:
     def test_should_compute_pairwise_distances(
         self,
         encode_use_case: EncodeDocumentUseCase,
+        small_codebook: ColorCodebook,
     ) -> None:
         rng = np.random.default_rng(42)
         documents = [
@@ -192,7 +195,7 @@ class TestEncodeComparePipeline:
             )
             for i in range(3)
         ]
-        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator())
+        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator(codebook=small_codebook))
 
         pairs = compare_use_case.execute_pairwise(documents)
 
@@ -201,6 +204,7 @@ class TestEncodeComparePipeline:
     def test_should_find_nearest_neighbors(
         self,
         encode_use_case: EncodeDocumentUseCase,
+        small_codebook: ColorCodebook,
     ) -> None:
         rng = np.random.default_rng(42)
         query = encode_use_case.execute(rng.standard_normal((5, 8)).astype(np.float32), document_id="query")
@@ -211,7 +215,7 @@ class TestEncodeComparePipeline:
             )
             for i in range(5)
         ]
-        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator())
+        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator(codebook=small_codebook))
 
         neighbors = compare_use_case.find_nearest_neighbors(query, corpus, k=2)
 
@@ -267,6 +271,7 @@ class TestFullPipeline:
     def test_should_encode_compress_and_compare(
         self,
         encode_use_case: EncodeDocumentUseCase,
+        small_codebook: ColorCodebook,
     ) -> None:
         rng = np.random.default_rng(42)
         documents = [
@@ -280,7 +285,7 @@ class TestFullPipeline:
         compress_use_case = CompressDocumentUseCase()
         batch_stats = compress_use_case.execute_batch(documents)
 
-        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator())
+        compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator(codebook=small_codebook))
         pairs = compare_use_case.execute_pairwise(documents)
 
         assert batch_stats["total_tokens"] > 0

@@ -5,7 +5,6 @@ from typing import List
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.cm import get_cmap
 from sklearn.manifold import TSNE  # type: ignore
 from sklearn.metrics import confusion_matrix  # type: ignore
 
@@ -94,7 +93,7 @@ class MatplotlibFigureRenderer(FigureRenderer):
         fig, ax = plt.subplots(figsize=(10, 8))
 
         unique_labels = sorted(set(labels))
-        cmap = get_cmap("tab10")
+        cmap = matplotlib.colormaps["tab10"]
         colors = cmap(np.linspace(0, 1, len(unique_labels)))
 
         for label_idx, label in enumerate(unique_labels):
@@ -126,7 +125,7 @@ class MatplotlibFigureRenderer(FigureRenderer):
         cm = confusion_matrix(y_true, y_pred)
 
         fig, ax = plt.subplots(figsize=(8, 8))
-        im = ax.imshow(cm, interpolation="nearest", cmap=get_cmap("Blues"))
+        im = ax.imshow(cm, interpolation="nearest", cmap=matplotlib.colormaps["Blues"])
         ax.figure.colorbar(im, ax=ax)
 
         ax.set(

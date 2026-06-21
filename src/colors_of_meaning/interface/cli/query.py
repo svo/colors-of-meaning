@@ -58,7 +58,7 @@ def main(args: QueryArgs) -> None:
     palette = _parse_palette(args.palette_json)
     print(f"Querying with {len(palette)} colors, k={args.k}...")
 
-    distance_calculator = WassersteinDistanceCalculator()
+    distance_calculator = WassersteinDistanceCalculator(codebook=codebook)
     compare_use_case = CompareDocumentsUseCase(distance_calculator=distance_calculator)
     query_use_case = QueryByPaletteUseCase(
         compare_use_case=compare_use_case,

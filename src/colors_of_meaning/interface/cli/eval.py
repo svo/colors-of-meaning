@@ -83,9 +83,8 @@ def _create_color_classifier(args: EvalArgs, config: SynestheticConfig) -> tuple
         raise FileNotFoundError(f"Codebook not found at {args.codebook_path}")
     quantized_mapper = QuantizedColorMapper(color_mapper, codebook)
     encode_use_case = EncodeDocumentUseCase(quantized_mapper)
-    classifier = ColorHistogramClassifier(
-        embedding_adapter, encode_use_case, WassersteinDistanceCalculator(), k=args.k_neighbors
-    )
+    distance_calculator = WassersteinDistanceCalculator(codebook=codebook, sinkhorn_reg=config.distance.sinkhorn_reg)
+    classifier = ColorHistogramClassifier(embedding_adapter, encode_use_case, distance_calculator, k=args.k_neighbors)
     return classifier, 12.0
 
 

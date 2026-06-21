@@ -192,6 +192,9 @@ class TestEvalCLI:
         main(args)
 
         mock_use_case.execute.assert_called_once()
+        mock_distance_calc_class.assert_called_once_with(
+            codebook=mock_codebook, sinkhorn_reg=mock_config.distance.sinkhorn_reg
+        )
         # Verify bits_per_token was passed
         assert mock_use_case.execute.call_args[1]["bits_per_token"] == 12.0
         # Verify bits_per_token was printed

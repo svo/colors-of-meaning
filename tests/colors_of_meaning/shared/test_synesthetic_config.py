@@ -168,6 +168,28 @@ class TestSynestheticConfig:
 
         assert isinstance(config.structured_mapper, StructuredMapperConfig)
 
+    def test_should_read_sinkhorn_reg_when_present_in_yaml(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("distance:\n  metric: wasserstein\n  sinkhorn_reg: 0.05\n")
+
+        config = SynestheticConfig.from_yaml(str(config_path))
+
+        assert config.distance.sinkhorn_reg == 0.05
+
+    def test_should_round_trip_sinkhorn_reg_through_yaml(self, tmp_path: Path) -> None:
+        config = SynestheticConfig(
+            projector=ProjectorConfig(),
+            codebook=CodebookConfig(),
+            training=TrainingConfig(),
+            distance=DistanceConfig(sinkhorn_reg=0.01),
+            dataset=DatasetConfig(),
+        )
+        config_path = tmp_path / "output.yaml"
+
+        config.to_yaml(str(config_path))
+
+        assert SynestheticConfig.from_yaml(str(config_path)).distance.sinkhorn_reg == 0.01
+
 
 def _assert_projector_defaults(config: ProjectorConfig) -> None:
     assert config.embedding_dim == 384
@@ -229,6 +251,11 @@ class TestDistanceConfig:
 
         assert config.metric == "wasserstein"
         assert config.smoothing_epsilon == 1e-8
+
+    def test_should_default_sinkhorn_reg_to_none_when_not_provided(self) -> None:
+        config = DistanceConfig()
+
+        assert config.sinkhorn_reg is None
 
 
 class TestDatasetConfig:
