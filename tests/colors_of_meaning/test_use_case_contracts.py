@@ -156,8 +156,8 @@ class TestEvaluateContract:
         use_case = EvaluateUseCase(mock_classifier, mock_metrics, mock_dataset)
         use_case.execute(max_samples=50)
 
-        mock_dataset.get_samples.assert_any_call(split="train", max_samples=50)
-        mock_dataset.get_samples.assert_any_call(split="test", max_samples=50)
+        mock_dataset.get_samples.assert_any_call(split="train", max_samples=50, seed=None)
+        mock_dataset.get_samples.assert_any_call(split="test", max_samples=50, seed=None)
 
 
 class TestCompareDocumentsContract:

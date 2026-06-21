@@ -134,6 +134,22 @@ class TestLoadSupervisedData:
         assert texts == ["hello world", "foo bar"]
         assert list(labels) == [0, 1]
 
+    @patch("colors_of_meaning.interface.cli.train._create_dataset_adapter")
+    def test_should_forward_configured_seed_to_get_samples(self, mock_create_adapter: Mock) -> None:
+        mock_adapter = Mock()
+        mock_adapter.get_samples.return_value = [Mock(text="hello", label=0)]
+        mock_create_adapter.return_value = mock_adapter
+
+        mock_config = Mock()
+        mock_config.dataset.name = "ag_news"
+        mock_config.dataset.train_split = "train"
+        mock_config.dataset.max_samples = 5
+        mock_config.training.seed = 7
+
+        _load_supervised_data(mock_config)
+
+        assert mock_adapter.get_samples.call_args[1]["seed"] == 7
+
 
 class TestLoadTextsFromFile:
     def test_should_load_texts_from_file(self, tmp_path: Path) -> None:

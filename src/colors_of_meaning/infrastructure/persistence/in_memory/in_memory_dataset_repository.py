@@ -9,7 +9,12 @@ class InMemoryDatasetRepository(DatasetRepository):
         self._samples = samples
         self._label_names = label_names
 
-    def get_samples(self, split: str, max_samples: Optional[int] = None) -> List[EvaluationSample]:
+    def get_samples(
+        self,
+        split: str,
+        max_samples: Optional[int] = None,
+        seed: Optional[int] = None,
+    ) -> List[EvaluationSample]:
         filtered_samples = [s for s in self._samples if s.split == split]
 
         if max_samples is not None:

@@ -59,6 +59,21 @@ def test_should_use_application_use_case_in_cli() -> None:
     )
 
 
+def test_should_keep_dataset_infrastructure_independent_of_upper_layers() -> None:
+    (
+        archrule(
+            "Dataset Infrastructure Independence",
+            comment="Infrastructure dataset adapters and the seeded sampler must not import application or interface",
+        )
+        .match("colors_of_meaning.infrastructure.dataset.*")
+        .should_not_import(
+            "colors_of_meaning.application.*",
+            "colors_of_meaning.interface.*",
+        )
+        .check("colors_of_meaning")
+    )
+
+
 def test_should_maintain_shared_module_independence() -> None:
     (
         archrule(

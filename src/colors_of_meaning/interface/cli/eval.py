@@ -123,7 +123,9 @@ def main(args: EvalArgs) -> None:
     max_samples = config.dataset.max_samples if hasattr(config.dataset, "max_samples") else None
     limit_msg = f" (limited to {max_samples} samples per split)" if max_samples else ""
     print(f"Evaluating on {args.dataset} with {args.method} method{limit_msg}...")
-    result = evaluate_use_case.execute(bits_per_token=bits_per_token, max_samples=max_samples)
+    result = evaluate_use_case.execute(
+        bits_per_token=bits_per_token, max_samples=max_samples, seed=config.training.seed
+    )
     _print_results(args, result)
 
 

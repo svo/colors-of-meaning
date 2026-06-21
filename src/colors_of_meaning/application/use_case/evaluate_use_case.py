@@ -17,9 +17,14 @@ class EvaluateUseCase:
         self.metrics_calculator = metrics_calculator
         self.dataset_repository = dataset_repository
 
-    def execute(self, bits_per_token: Optional[float] = None, max_samples: Optional[int] = None) -> EvaluationResult:
-        train_samples = self.dataset_repository.get_samples(split="train", max_samples=max_samples)
-        test_samples = self.dataset_repository.get_samples(split="test", max_samples=max_samples)
+    def execute(
+        self,
+        bits_per_token: Optional[float] = None,
+        max_samples: Optional[int] = None,
+        seed: Optional[int] = None,
+    ) -> EvaluationResult:
+        train_samples = self.dataset_repository.get_samples(split="train", max_samples=max_samples, seed=seed)
+        test_samples = self.dataset_repository.get_samples(split="test", max_samples=max_samples, seed=seed)
 
         self.classifier.fit(train_samples)
 

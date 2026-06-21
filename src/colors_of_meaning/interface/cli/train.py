@@ -100,6 +100,7 @@ def _load_supervised_data(config: SynestheticConfig) -> tuple:
     samples = dataset_adapter.get_samples(
         split=config.dataset.train_split,
         max_samples=config.dataset.max_samples,
+        seed=config.training.seed,
     )
     texts = [sample.text for sample in samples]
     labels = np.array([sample.label for sample in samples])

@@ -6,7 +6,12 @@ from colors_of_meaning.domain.model.evaluation_sample import EvaluationSample
 
 class DatasetRepository(ABC):
     @abstractmethod
-    def get_samples(self, split: str, max_samples: Optional[int] = None) -> List[EvaluationSample]:
+    def get_samples(
+        self,
+        split: str,
+        max_samples: Optional[int] = None,
+        seed: Optional[int] = None,
+    ) -> List[EvaluationSample]:
         raise NotImplementedError
 
     @abstractmethod

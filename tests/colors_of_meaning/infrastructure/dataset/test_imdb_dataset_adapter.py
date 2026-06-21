@@ -90,3 +90,25 @@ class TestIMDBDatasetAdapter:
         adapter.get_samples("train")
 
         mock_load_dataset.assert_called_once_with("stanfordnlp/imdb", split="train")
+
+    @patch("colors_of_meaning.infrastructure.dataset.imdb_dataset_adapter.load_dataset")
+    def test_should_include_both_classes_when_train_slice_is_sampled(self, mock_load_dataset: Mock) -> None:
+        negatives = [{"text": f"bad film {i}", "label": 0} for i in range(8)]
+        positives = [{"text": f"good film {i}", "label": 1} for i in range(8)]
+        mock_load_dataset.return_value = negatives + positives
+
+        adapter = IMDBDatasetAdapter()
+        result = adapter.get_samples("train", max_samples=6, seed=42)
+
+        assert {sample.label for sample in result} == {0, 1}
+
+    @patch("colors_of_meaning.infrastructure.dataset.imdb_dataset_adapter.load_dataset")
+    def test_should_include_both_classes_when_test_slice_is_sampled(self, mock_load_dataset: Mock) -> None:
+        negatives = [{"text": f"bad film {i}", "label": 0} for i in range(8)]
+        positives = [{"text": f"good film {i}", "label": 1} for i in range(8)]
+        mock_load_dataset.return_value = negatives + positives
+
+        adapter = IMDBDatasetAdapter()
+        result = adapter.get_samples("test", max_samples=6, seed=42)
+
+        assert {sample.label for sample in result} == {0, 1}

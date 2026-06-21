@@ -54,6 +54,45 @@ class TestEvalCLI:
 
         mock_use_case.execute.assert_called_once()
 
+    @patch("colors_of_meaning.interface.cli.eval.SynestheticConfig")
+    @patch("colors_of_meaning.interface.cli.eval.AGNewsDatasetAdapter")
+    @patch("colors_of_meaning.interface.cli.eval.TFIDFClassifier")
+    @patch("colors_of_meaning.interface.cli.eval.EvaluateUseCase")
+    @patch("colors_of_meaning.interface.cli.eval.SklearnMetricsCalculator")
+    @patch("builtins.print")
+    def test_should_forward_configured_seed_to_use_case(
+        self,
+        mock_print: Mock,
+        mock_metrics_class: Mock,
+        mock_use_case_class: Mock,
+        mock_classifier_class: Mock,
+        mock_dataset_class: Mock,
+        mock_config_class: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_config = Mock()
+        mock_config.training.seed = 99
+        mock_config_class.from_yaml.return_value = mock_config
+
+        mock_use_case = Mock()
+        mock_result = Mock()
+        mock_result.accuracy = 0.85
+        mock_result.macro_f1 = 0.80
+        mock_result.mrr = 0.75
+        mock_result.recall_at_k = {}
+        mock_result.bits_per_token = None
+        mock_use_case.execute.return_value = mock_result
+        mock_use_case_class.return_value = mock_use_case
+
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("dummy")
+
+        args = EvalArgs(config=str(config_path), dataset="ag_news", method="tfidf")
+
+        main(args)
+
+        assert mock_use_case.execute.call_args[1]["seed"] == 99
+
     def test_should_create_eval_args_with_defaults(self) -> None:
         args = EvalArgs()
 

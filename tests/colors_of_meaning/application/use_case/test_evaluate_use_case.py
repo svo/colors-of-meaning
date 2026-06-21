@@ -49,7 +49,7 @@ class TestEvaluateUseCase:
 
         use_case.execute()
 
-        mock_dataset_repository.get_samples.assert_any_call(split="train", max_samples=None)
+        mock_dataset_repository.get_samples.assert_any_call(split="train", max_samples=None, seed=None)
 
     def test_should_load_test_dataset_from_repository(
         self,
@@ -68,7 +68,7 @@ class TestEvaluateUseCase:
 
         use_case.execute()
 
-        mock_dataset_repository.get_samples.assert_any_call(split="test", max_samples=None)
+        mock_dataset_repository.get_samples.assert_any_call(split="test", max_samples=None, seed=None)
 
     def test_should_fit_classifier_with_train_samples(
         self,
@@ -146,6 +146,44 @@ class TestEvaluateUseCase:
         result = use_case.execute()
 
         assert result == expected_result
+
+    def test_should_forward_seed_to_train_split(
+        self,
+        use_case: EvaluateUseCase,
+        mock_dataset_repository: Mock,
+        mock_classifier: Mock,
+        mock_metrics_calculator: Mock,
+    ) -> None:
+        train_samples = [EvaluationSample(text="train", label=0, split="train")]
+        test_samples = [EvaluationSample(text="test", label=0, split="test")]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
+        mock_classifier.predict.return_value = [0]
+        mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
+            accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0
+        )
+
+        use_case.execute(seed=123)
+
+        mock_dataset_repository.get_samples.assert_any_call(split="train", max_samples=None, seed=123)
+
+    def test_should_forward_seed_to_test_split(
+        self,
+        use_case: EvaluateUseCase,
+        mock_dataset_repository: Mock,
+        mock_classifier: Mock,
+        mock_metrics_calculator: Mock,
+    ) -> None:
+        train_samples = [EvaluationSample(text="train", label=0, split="train")]
+        test_samples = [EvaluationSample(text="test", label=0, split="test")]
+        mock_dataset_repository.get_samples.side_effect = [train_samples, test_samples]
+        mock_classifier.predict.return_value = [0]
+        mock_metrics_calculator.calculate_classification_metrics.return_value = EvaluationResult(
+            accuracy=0.9, macro_f1=0.85, recall_at_k={}, mrr=0.0
+        )
+
+        use_case.execute(seed=123)
+
+        mock_dataset_repository.get_samples.assert_any_call(split="test", max_samples=None, seed=123)
 
     def test_should_pass_bits_per_token_to_metrics_calculator(
         self,

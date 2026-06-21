@@ -1,9 +1,36 @@
+from typing import List, Optional
 from unittest.mock import Mock
 
 import pytest
 from assertpy import assert_that
 
 from colors_of_meaning.domain.model.evaluation_sample import EvaluationSample
+from colors_of_meaning.domain.repository.dataset_repository import DatasetRepository
+
+
+class SeededStubDatasetRepository(DatasetRepository):
+    def get_samples(
+        self,
+        split: str,
+        max_samples: Optional[int] = None,
+        seed: Optional[int] = None,
+    ) -> List[EvaluationSample]:
+        return [EvaluationSample(text=f"{split}-{seed}", label=0, split=split)]
+
+    def get_label_names(self) -> List[str]:
+        return ["class_0"]
+
+    def get_num_classes(self) -> int:
+        return 1
+
+
+class TestDatasetRepositoryPort:
+    def test_should_accept_seed_keyword_when_get_samples_is_called(self) -> None:
+        repository = SeededStubDatasetRepository()
+
+        result = repository.get_samples("train", max_samples=1, seed=7)
+
+        assert_that(result[0].text).is_equal_to("train-7")
 
 
 class TestDatasetRepository:

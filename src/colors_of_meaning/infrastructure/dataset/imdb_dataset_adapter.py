@@ -4,28 +4,24 @@ from datasets import load_dataset  # type: ignore
 
 from colors_of_meaning.domain.model.evaluation_sample import EvaluationSample
 from colors_of_meaning.domain.repository.dataset_repository import DatasetRepository
+from colors_of_meaning.infrastructure.dataset.seeded_sampler import seeded_subsample
 
 
 class IMDBDatasetAdapter(DatasetRepository):
     def __init__(self) -> None:
         self._label_names = ["negative", "positive"]
 
-    def get_samples(self, split: str, max_samples: Optional[int] = None) -> List[EvaluationSample]:
+    def get_samples(
+        self,
+        split: str,
+        max_samples: Optional[int] = None,
+        seed: Optional[int] = None,
+    ) -> List[EvaluationSample]:
         dataset = load_dataset("stanfordnlp/imdb", split=split)  # nosec B615
 
-        samples = []
-        for i, example in enumerate(dataset):
-            if max_samples is not None and i >= max_samples:
-                break
-            samples.append(
-                EvaluationSample(
-                    text=example["text"],
-                    label=example["label"],
-                    split=split,
-                )
-            )
+        samples = [EvaluationSample(text=example["text"], label=example["label"], split=split) for example in dataset]
 
-        return samples
+        return seeded_subsample(samples, max_samples, seed)
 
     def get_label_names(self) -> List[str]:
         return self._label_names
