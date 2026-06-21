@@ -88,7 +88,39 @@ class TestColorHistogramClassifier:
 
         mock_index_class.assert_called_once_with(space="cosine", dim=4)
         mock_index.init_index.assert_called_once()
-        mock_index.set_ef.assert_called_once_with(50)
+        mock_index.set_ef.assert_called_once_with(100)
+
+    @patch("hnswlib.Index")
+    def test_should_set_ef_at_least_num_candidates_when_fitting(
+        self,
+        mock_index_class: Mock,
+        classifier: ColorHistogramClassifier,
+        train_samples: list,
+        mock_embedding_adapter: Mock,
+    ) -> None:
+        mock_index = Mock()
+        mock_index_class.return_value = mock_index
+        mock_embedding_adapter.encode_document_sentences.return_value = [[0.1, 0.2, 0.3]]
+
+        classifier.fit(train_samples)
+
+        assert mock_index.set_ef.call_args[0][0] >= classifier.num_candidates
+
+    @patch("hnswlib.Index")
+    def test_should_pin_single_thread_when_building_index(
+        self,
+        mock_index_class: Mock,
+        classifier: ColorHistogramClassifier,
+        train_samples: list,
+        mock_embedding_adapter: Mock,
+    ) -> None:
+        mock_index = Mock()
+        mock_index_class.return_value = mock_index
+        mock_embedding_adapter.encode_document_sentences.return_value = [[0.1, 0.2, 0.3]]
+
+        classifier.fit(train_samples)
+
+        mock_index.set_num_threads.assert_called_once_with(1)
 
     @patch("hnswlib.Index")
     def test_should_predict_labels_using_two_phase_retrieval(

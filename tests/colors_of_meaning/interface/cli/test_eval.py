@@ -1,9 +1,29 @@
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
-from colors_of_meaning.interface.cli.eval import EvalArgs, main
+from colors_of_meaning.interface.cli.eval import EvalArgs, main, _create_color_classifier
+
+
+def _run_color_classifier_with_mocked_factory(mapper_type: str) -> tuple:
+    config = Mock()
+    args = EvalArgs(mapper_type=mapper_type)
+    with ExitStack() as stack:
+        stack.enter_context(patch("colors_of_meaning.interface.cli.eval.SentenceEmbeddingAdapter"))
+        mock_create_mapper = stack.enter_context(patch("colors_of_meaning.interface.cli.eval.create_color_mapper"))
+        mock_repo_class = stack.enter_context(patch("colors_of_meaning.interface.cli.eval.FileColorCodebookRepository"))
+        stack.enter_context(patch("colors_of_meaning.interface.cli.eval.WassersteinDistanceCalculator"))
+        stack.enter_context(patch("colors_of_meaning.interface.cli.eval.EncodeDocumentUseCase"))
+        stack.enter_context(patch("colors_of_meaning.interface.cli.eval.ColorHistogramClassifier"))
+        stack.enter_context(patch("colors_of_meaning.domain.service.color_mapper.QuantizedColorMapper"))
+        stack.enter_context(patch("builtins.print"))
+        mock_repo_class.return_value.load.return_value = Mock()
+        mock_mapper = Mock()
+        mock_create_mapper.return_value = mock_mapper
+        _create_color_classifier(args, config)
+    return mock_create_mapper, mock_mapper
 
 
 class TestEvalCLI:
@@ -100,6 +120,31 @@ class TestEvalCLI:
         assert args.method == "color"
         assert args.k_neighbors == 5
 
+    def test_should_default_mapper_type_to_unconstrained(self) -> None:
+        args = EvalArgs()
+
+        assert args.mapper_type == "unconstrained"
+
+    def test_should_route_through_factory_when_mapper_type_is_structured(self) -> None:
+        mock_create_mapper, _ = _run_color_classifier_with_mocked_factory("structured")
+
+        assert mock_create_mapper.call_args[0][0] == "structured"
+
+    def test_should_load_weights_when_mapper_type_is_structured(self) -> None:
+        _, mock_mapper = _run_color_classifier_with_mocked_factory("structured")
+
+        mock_mapper.load_weights.assert_called_once()
+
+    def test_should_route_through_factory_when_mapper_type_is_supervised(self) -> None:
+        mock_create_mapper, _ = _run_color_classifier_with_mocked_factory("supervised")
+
+        assert mock_create_mapper.call_args[0][0] == "supervised"
+
+    def test_should_load_weights_when_mapper_type_is_supervised(self) -> None:
+        _, mock_mapper = _run_color_classifier_with_mocked_factory("supervised")
+
+        mock_mapper.load_weights.assert_called_once()
+
     @patch("colors_of_meaning.interface.cli.eval.SynestheticConfig")
     @patch("colors_of_meaning.interface.cli.eval.IMDBDatasetAdapter")
     @patch("colors_of_meaning.interface.cli.eval.TFIDFClassifier")
@@ -157,7 +202,7 @@ class TestEvalCLI:
     @patch("colors_of_meaning.interface.cli.eval.EvaluateUseCase")
     @patch("colors_of_meaning.interface.cli.eval.SklearnMetricsCalculator")
     @patch("colors_of_meaning.interface.cli.eval.SentenceEmbeddingAdapter")
-    @patch("colors_of_meaning.interface.cli.eval.PyTorchColorMapper")
+    @patch("colors_of_meaning.interface.cli.eval.create_color_mapper")
     @patch("colors_of_meaning.interface.cli.eval.FileColorCodebookRepository")
     @patch("colors_of_meaning.interface.cli.eval.WassersteinDistanceCalculator")
     @patch("colors_of_meaning.interface.cli.eval.EncodeDocumentUseCase")
@@ -170,7 +215,7 @@ class TestEvalCLI:
         mock_encode_use_case_class: Mock,
         mock_distance_calc_class: Mock,
         mock_codebook_repo_class: Mock,
-        mock_color_mapper_class: Mock,
+        mock_create_color_mapper: Mock,
         mock_embedding_adapter_class: Mock,
         mock_metrics_class: Mock,
         mock_use_case_class: Mock,
@@ -194,7 +239,7 @@ class TestEvalCLI:
         mock_embedding_adapter_class.return_value = mock_embedding_adapter
 
         mock_color_mapper = Mock()
-        mock_color_mapper_class.return_value = mock_color_mapper
+        mock_create_color_mapper.return_value = mock_color_mapper
 
         mock_codebook = Mock()
         mock_codebook_repo = Mock()
@@ -243,14 +288,14 @@ class TestEvalCLI:
     @patch("colors_of_meaning.interface.cli.eval.SynestheticConfig")
     @patch("colors_of_meaning.interface.cli.eval.AGNewsDatasetAdapter")
     @patch("colors_of_meaning.interface.cli.eval.SentenceEmbeddingAdapter")
-    @patch("colors_of_meaning.interface.cli.eval.PyTorchColorMapper")
+    @patch("colors_of_meaning.interface.cli.eval.create_color_mapper")
     @patch("colors_of_meaning.interface.cli.eval.FileColorCodebookRepository")
     @patch("colors_of_meaning.domain.service.color_mapper.QuantizedColorMapper")
     def test_should_raise_error_when_codebook_not_found(
         self,
         mock_quantized_mapper_class: Mock,
         mock_codebook_repo_class: Mock,
-        mock_color_mapper_class: Mock,
+        mock_create_color_mapper: Mock,
         mock_embedding_adapter_class: Mock,
         mock_dataset_class: Mock,
         mock_config_class: Mock,
@@ -271,7 +316,7 @@ class TestEvalCLI:
         mock_embedding_adapter_class.return_value = mock_embedding_adapter
 
         mock_color_mapper = Mock()
-        mock_color_mapper_class.return_value = mock_color_mapper
+        mock_create_color_mapper.return_value = mock_color_mapper
 
         # Mock codebook repository to return None
         mock_codebook_repo = Mock()

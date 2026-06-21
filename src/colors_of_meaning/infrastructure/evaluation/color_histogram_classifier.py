@@ -57,6 +57,7 @@ class ColorHistogramClassifier(Classifier):
         num_elements = histogram_matrix.shape[0]
 
         self.index = hnswlib.Index(space="cosine", dim=self.histogram_dim)
+        self.index.set_num_threads(1)
         self.index.init_index(
             max_elements=num_elements,
             ef_construction=self.ef_construction,
@@ -64,7 +65,7 @@ class ColorHistogramClassifier(Classifier):
             random_seed=100,
         )
         self.index.add_items(histogram_matrix, np.arange(num_elements))
-        self.index.set_ef(self.ef)
+        self.index.set_ef(max(self.ef, self.num_candidates))
 
     def predict(self, samples: List[EvaluationSample]) -> List[int]:
         if self.index is None:

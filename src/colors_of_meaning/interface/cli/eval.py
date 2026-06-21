@@ -6,7 +6,7 @@ from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
 from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter import (
     SentenceEmbeddingAdapter,
 )
-from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import PyTorchColorMapper
+from colors_of_meaning.infrastructure.ml.color_mapper_factory import create_color_mapper
 from colors_of_meaning.infrastructure.persistence.file_color_codebook_repository import (
     FileColorCodebookRepository,
 )
@@ -52,6 +52,7 @@ class EvalArgs:
     model_path: str = "artifacts/models/projector.pth"
     codebook_path: str = "codebook_4096"
     k_neighbors: int = 5
+    mapper_type: str = "unconstrained"
 
 
 def _setup_dataset(dataset_name: str) -> DatasetRepository:
@@ -70,13 +71,7 @@ def _create_color_classifier(args: EvalArgs, config: SynestheticConfig) -> tuple
     from colors_of_meaning.domain.service.color_mapper import QuantizedColorMapper
 
     embedding_adapter = SentenceEmbeddingAdapter()
-    color_mapper = PyTorchColorMapper(
-        input_dim=config.projector.embedding_dim,
-        hidden_dim_1=config.projector.hidden_dim_1,
-        hidden_dim_2=config.projector.hidden_dim_2,
-        dropout_rate=config.projector.dropout_rate,
-        device=config.training.device,
-    )
+    color_mapper = create_color_mapper(args.mapper_type, config)
     color_mapper.load_weights(args.model_path)
     codebook = FileColorCodebookRepository().load(args.codebook_path)
     if codebook is None:

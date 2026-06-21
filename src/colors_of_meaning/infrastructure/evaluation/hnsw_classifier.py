@@ -10,14 +10,6 @@ from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter impor
 
 
 class HNSWClassifier(Classifier):
-    """
-    k-NN classifier using HNSW (Hierarchical Navigable Small World) graphs.
-
-    This is a more portable alternative to FAISS, with excellent ARM64 support
-    and faster performance on CPU. Trade-off: uses more memory than FAISS+PQ
-    as it stores full-precision vectors.
-    """
-
     def __init__(
         self,
         embedding_adapter: SentenceEmbeddingAdapter,
@@ -26,19 +18,6 @@ class HNSWClassifier(Classifier):
         k: int = 5,
         ef: int = 50,
     ) -> None:
-        """
-        Initialize HNSW classifier.
-
-        Args:
-            embedding_adapter: Adapter for encoding text to embeddings
-            M: Number of bi-directional links per node (12-48 typical).
-                Higher = better recall, more memory
-            ef_construction: Size of dynamic candidate list during construction.
-                Higher = better quality index, slower build time
-            k: Number of nearest neighbors for classification
-            ef: Size of dynamic candidate list during search. Must be >= k.
-                Higher = better recall, slower search
-        """
         self.embedding_adapter = embedding_adapter
         self.M = M  # noqa: N803
         self.ef_construction = ef_construction
@@ -60,20 +39,16 @@ class HNSWClassifier(Classifier):
         self.dimension = embeddings_array.shape[1]
         num_elements = embeddings_array.shape[0]
 
-        # Create and initialize HNSW index
         self.index = hnswlib.Index(space="l2", dim=self.dimension)
+        self.index.set_num_threads(1)
         self.index.init_index(
             max_elements=num_elements,
             ef_construction=self.ef_construction,
             M=self.M,
             random_seed=100,
         )
-
-        # Add vectors to index
         self.index.add_items(embeddings_array, np.arange(num_elements))
-
-        # Set query-time search parameters
-        self.index.set_ef(self.ef)
+        self.index.set_ef(max(self.ef, self.k))
 
     def predict(self, samples: List[EvaluationSample]) -> List[int]:
         if self.index is None:
@@ -81,7 +56,6 @@ class HNSWClassifier(Classifier):
 
         embeddings_array = self._encode_samples(samples)
 
-        # Search returns (indices, distances) - note opposite order from FAISS
         indices, _ = self.index.knn_query(embeddings_array, k=self.k)
 
         predictions = [self._predict_label(neighbor_indices) for neighbor_indices in indices]

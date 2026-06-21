@@ -8,10 +8,7 @@ from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter impor
     SentenceEmbeddingAdapter,
 )
 from colors_of_meaning.domain.service.color_mapper import ColorMapper
-from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import PyTorchColorMapper
-from colors_of_meaning.infrastructure.ml.structured_pytorch_color_mapper import (
-    StructuredPyTorchColorMapper,
-)
+from colors_of_meaning.infrastructure.ml.color_mapper_factory import create_color_mapper
 from colors_of_meaning.infrastructure.ml.supervised_pytorch_color_mapper import (
     SupervisedPyTorchColorMapper,
 )
@@ -55,44 +52,7 @@ def _create_dataset_adapter(dataset_name: str) -> DatasetRepository:
 
 
 def _create_color_mapper(args: TrainArgs, config: SynestheticConfig) -> ColorMapper:
-    if args.mapper_type == "structured":
-        structured_config = config.structured_mapper
-        if structured_config is None:
-            raise ValueError("structured_mapper config is required for structured mapper type")
-        return StructuredPyTorchColorMapper(
-            input_dim=config.projector.embedding_dim,
-            hidden_dim_1=config.projector.hidden_dim_1,
-            hidden_dim_2=config.projector.hidden_dim_2,
-            dropout_rate=config.projector.dropout_rate,
-            device=config.training.device,
-            alpha=structured_config.alpha,
-            beta=structured_config.beta,
-            gamma=structured_config.gamma,
-            num_clusters=structured_config.num_clusters,
-            max_chroma=structured_config.max_chroma,
-        )
-
-    if args.mapper_type == "supervised":
-        supervised_config = config.supervised_mapper
-        if supervised_config is None:
-            raise ValueError("supervised_mapper config is required for supervised mapper type")
-        return SupervisedPyTorchColorMapper(
-            input_dim=config.projector.embedding_dim,
-            hidden_dim_1=config.projector.hidden_dim_1,
-            hidden_dim_2=config.projector.hidden_dim_2,
-            dropout_rate=config.projector.dropout_rate,
-            device=config.training.device,
-            num_classes=supervised_config.num_classes,
-            classification_weight=supervised_config.classification_weight,
-        )
-
-    return PyTorchColorMapper(
-        input_dim=config.projector.embedding_dim,
-        hidden_dim_1=config.projector.hidden_dim_1,
-        hidden_dim_2=config.projector.hidden_dim_2,
-        dropout_rate=config.projector.dropout_rate,
-        device=config.training.device,
-    )
+    return create_color_mapper(args.mapper_type, config)
 
 
 def _load_supervised_data(config: SynestheticConfig) -> tuple:

@@ -51,6 +51,29 @@ class TestHNSWClassifier:
         assert mock_embedding_adapter.encode_batch.call_count == 1
 
     @patch("hnswlib.Index")
+    def test_should_set_ef_at_least_k_when_ef_below_k(
+        self, mock_index_class: Mock, train_samples: list, mock_embedding_adapter: Mock
+    ) -> None:
+        mock_index = Mock()
+        mock_index_class.return_value = mock_index
+        classifier = HNSWClassifier(embedding_adapter=mock_embedding_adapter, k=5, ef=2)
+
+        classifier.fit(train_samples)
+
+        assert mock_index.set_ef.call_args[0][0] >= classifier.k
+
+    @patch("hnswlib.Index")
+    def test_should_pin_single_thread_when_building_index(
+        self, mock_index_class: Mock, classifier: HNSWClassifier, train_samples: list, mock_embedding_adapter: Mock
+    ) -> None:
+        mock_index = Mock()
+        mock_index_class.return_value = mock_index
+
+        classifier.fit(train_samples)
+
+        mock_index.set_num_threads.assert_called_once_with(1)
+
+    @patch("hnswlib.Index")
     def test_should_predict_labels_for_test_samples(
         self, mock_index_class: Mock, classifier: HNSWClassifier, train_samples: list, mock_embedding_adapter: Mock
     ) -> None:
