@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from colors_of_meaning.domain.model.lab_color import LabColor
 from colors_of_meaning.domain.model.color_codebook import ColorCodebook
@@ -33,6 +34,27 @@ class TestColorCodebook:
         bin_index = codebook.quantize(LabColor(l=45.0, a=0.0, b=0.0))
 
         assert bin_index == 1
+
+    def test_should_match_first_minimum_when_distances_tie(self) -> None:
+        colors = [
+            LabColor(l=40.0, a=0.0, b=0.0),
+            LabColor(l=60.0, a=0.0, b=0.0),
+        ]
+        codebook = ColorCodebook(colors=colors, num_bins=2)
+
+        bin_index = codebook.quantize(LabColor(l=50.0, a=0.0, b=0.0))
+
+        assert bin_index == 0
+
+    def test_should_quantize_identically_to_uniform_grid_baseline_when_color_in_range(self) -> None:
+        codebook = ColorCodebook.create_uniform_grid(bins_per_dimension=8)
+        query = LabColor(l=37.0, a=11.0, b=-23.0)
+        palette = np.array([color.to_tuple() for color in codebook.colors], dtype=np.float64)
+        expected = int(np.argmin(np.sum((palette - np.array(query.to_tuple())) ** 2, axis=1)))
+
+        bin_index = codebook.quantize(query)
+
+        assert bin_index == expected
 
     def test_should_get_color_at_bin_index(self) -> None:
         colors = [

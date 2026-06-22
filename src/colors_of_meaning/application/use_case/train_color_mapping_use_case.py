@@ -1,10 +1,11 @@
 import logging
 import uuid
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 import numpy.typing as npt
 
 from colors_of_meaning.domain.service.color_mapper import ColorMapper
+from colors_of_meaning.domain.service.color_codebook_factory import ColorCodebookFactory
 from colors_of_meaning.domain.service.structure_preservation_evaluator import (
     StructurePreservationEvaluator,
 )
@@ -15,6 +16,8 @@ from colors_of_meaning.domain.repository.color_codebook_repository import (
 
 logger = logging.getLogger(__name__)
 
+LEARNED_CODEBOOK_MODE = "learned"
+
 
 class TrainColorMappingUseCase:
     def __init__(
@@ -22,10 +25,12 @@ class TrainColorMappingUseCase:
         color_mapper: ColorMapper,
         structure_preservation_evaluator: StructurePreservationEvaluator,
         codebook_repository: ColorCodebookRepository,
+        codebook_factory: Optional[ColorCodebookFactory] = None,
     ) -> None:
         self.color_mapper = color_mapper
         self.structure_preservation_evaluator = structure_preservation_evaluator
         self.codebook_repository = codebook_repository
+        self.codebook_factory = codebook_factory
 
     def execute(
         self,
@@ -36,6 +41,9 @@ class TrainColorMappingUseCase:
         bins_per_dimension: int,
         model_name: str,
         codebook_name: str,
+        codebook_mode: str = "uniform",
+        num_bins: int = 4096,
+        seed: int = 42,
     ) -> float:
         self.color_mapper.train(embeddings=embeddings, epochs=epochs, learning_rate=learning_rate)
 
@@ -43,7 +51,8 @@ class TrainColorMappingUseCase:
         self.color_mapper.restore_checkpoint(best_checkpoint)
         self.color_mapper.save_weights(model_name)
 
-        self._persist_codebook(bins_per_dimension, codebook_name)
+        codebook = self._build_codebook(codebook_mode, bins_per_dimension, embeddings, num_bins, seed)
+        self.codebook_repository.save(codebook, codebook_name)
         return best_correlation
 
     def _select_best_checkpoint(self, evaluation_embeddings: npt.NDArray) -> Tuple[Any, float]:
@@ -63,9 +72,22 @@ class TrainColorMappingUseCase:
         self._log_checkpoint_score(epoch, correlation)
         return correlation
 
-    def _persist_codebook(self, bins_per_dimension: int, codebook_name: str) -> None:
-        codebook = ColorCodebook.create_uniform_grid(bins_per_dimension=bins_per_dimension)
-        self.codebook_repository.save(codebook, codebook_name)
+    def _build_codebook(
+        self,
+        codebook_mode: str,
+        bins_per_dimension: int,
+        embeddings: npt.NDArray,
+        num_bins: int,
+        seed: int,
+    ) -> ColorCodebook:
+        if codebook_mode == LEARNED_CODEBOOK_MODE:
+            return self._build_learned_codebook(embeddings, num_bins, seed)
+        return ColorCodebook.create_uniform_grid(bins_per_dimension=bins_per_dimension)
+
+    def _build_learned_codebook(self, embeddings: npt.NDArray, num_bins: int, seed: int) -> ColorCodebook:
+        if self.codebook_factory is None:
+            raise ValueError("A codebook factory is required to build a learned codebook")
+        return self.codebook_factory.build(embeddings=embeddings, num_bins=num_bins, seed=seed)
 
     def _log_checkpoint_score(self, epoch: int, correlation: float) -> None:
         logger.info(

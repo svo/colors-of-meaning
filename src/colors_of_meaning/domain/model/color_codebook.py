@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from functools import cached_property
 from typing import List
 import numpy as np
+import numpy.typing as npt
 
 from colors_of_meaning.domain.model.lab_color import LabColor
 
@@ -16,29 +18,19 @@ class ColorCodebook:
         if self.num_bins <= 0:
             raise ValueError(f"num_bins must be positive, got {self.num_bins}")
 
+    @cached_property
+    def _palette_coordinates(self) -> npt.NDArray:
+        return np.array([[color.l, color.a, color.b] for color in self.colors], dtype=np.float64)
+
     def quantize(self, color: LabColor) -> int:
-        min_distance = float("inf")
-        closest_bin = 0
-
-        for i, codebook_color in enumerate(self.colors):
-            distance = self._euclidean_distance(color, codebook_color)
-            if distance < min_distance:
-                min_distance = distance
-                closest_bin = i
-
-        return closest_bin
+        query = np.array([color.l, color.a, color.b], dtype=np.float64)
+        squared_distances = np.sum((self._palette_coordinates - query) ** 2, axis=1)
+        return int(np.argmin(squared_distances))
 
     def get_color(self, bin_index: int) -> LabColor:
         if not 0 <= bin_index < self.num_bins:
             raise ValueError(f"bin_index must be in [0, {self.num_bins}), got {bin_index}")
         return self.colors[bin_index]
-
-    @staticmethod
-    def _euclidean_distance(color1: LabColor, color2: LabColor) -> float:
-        dl = color1.l - color2.l
-        da = color1.a - color2.a
-        db = color1.b - color2.b
-        return float(np.sqrt(dl * dl + da * da + db * db))
 
     @classmethod
     def create_uniform_grid(cls, bins_per_dimension: int = 16) -> "ColorCodebook":

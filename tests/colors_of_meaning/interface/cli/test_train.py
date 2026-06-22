@@ -9,11 +9,15 @@ from colors_of_meaning.interface.cli.train import (
     _apply_determinism,
     _select_evaluation_embeddings,
     _create_color_mapper,
+    _create_codebook_factory,
     _create_dataset_adapter,
     _load_supervised_data,
     _load_texts_from_file,
     _configure_supervised_mapper,
     _execute_training,
+)
+from colors_of_meaning.infrastructure.ml.learned_color_codebook_factory import (
+    LearnedColorCodebookFactory,
 )
 from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import PyTorchColorMapper
 from colors_of_meaning.infrastructure.ml.structured_pytorch_color_mapper import (
@@ -210,6 +214,64 @@ class TestExecuteTraining:
         _execute_training(args, mock_config, mock_mapper, embeddings)
 
         mock_use_case.execute.assert_called_once()
+
+    @patch("colors_of_meaning.interface.cli.train.FileColorCodebookRepository")
+    @patch("colors_of_meaning.interface.cli.train.TrainColorMappingUseCase")
+    @patch("builtins.print")
+    def test_should_inject_learned_codebook_factory_into_use_case_when_training(
+        self,
+        mock_print: Mock,
+        mock_use_case_class: Mock,
+        mock_repo_class: Mock,
+    ) -> None:
+        mock_use_case = Mock()
+        mock_use_case.execute.return_value = -0.5
+        mock_use_case_class.return_value = mock_use_case
+
+        mock_config = Mock()
+        mock_config.training.epochs = 10
+        mock_config.training.learning_rate = 0.001
+        mock_config.training.seed = 42
+        mock_config.codebook.bins_per_dimension = 4
+        mock_config.codebook.num_bins = 64
+
+        _execute_training(TrainArgs(), mock_config, Mock(), np.array([[1.0, 2.0], [3.0, 4.0]]))
+
+        assert isinstance(mock_use_case_class.call_args.kwargs["codebook_factory"], LearnedColorCodebookFactory)
+
+    @patch("colors_of_meaning.interface.cli.train.FileColorCodebookRepository")
+    @patch("colors_of_meaning.interface.cli.train.TrainColorMappingUseCase")
+    @patch("builtins.print")
+    def test_should_thread_codebook_mode_into_use_case_execute_when_training(
+        self,
+        mock_print: Mock,
+        mock_use_case_class: Mock,
+        mock_repo_class: Mock,
+    ) -> None:
+        mock_use_case = Mock()
+        mock_use_case.execute.return_value = -0.5
+        mock_use_case_class.return_value = mock_use_case
+
+        mock_config = Mock()
+        mock_config.training.epochs = 10
+        mock_config.training.learning_rate = 0.001
+        mock_config.training.seed = 42
+        mock_config.codebook.bins_per_dimension = 4
+        mock_config.codebook.num_bins = 64
+
+        _execute_training(TrainArgs(codebook_mode="learned"), mock_config, Mock(), np.array([[1.0, 2.0]]))
+
+        assert mock_use_case.execute.call_args.kwargs["codebook_mode"] == "learned"
+
+
+class TestCreateCodebookFactory:
+    def test_should_default_codebook_mode_to_uniform_when_not_specified(self) -> None:
+        assert TrainArgs().codebook_mode == "uniform"
+
+    def test_should_create_learned_codebook_factory_for_mapper(self) -> None:
+        factory = _create_codebook_factory(Mock())
+
+        assert isinstance(factory, LearnedColorCodebookFactory)
 
 
 class TestTrainCLI:

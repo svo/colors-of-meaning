@@ -91,6 +91,21 @@ def test_should_keep_structure_metric_numerical_dependencies_out_of_domain() -> 
     )
 
 
+def test_should_not_import_sklearn_in_domain_layer() -> None:
+    (
+        archrule(
+            "Domain k-means Isolation",
+            comment="The learned-codebook k-means dependency must stay out of the domain layer",
+        )
+        .match("colors_of_meaning.domain.*")
+        .should_not_import(
+            "sklearn",
+            "sklearn.*",
+        )
+        .check("colors_of_meaning")
+    )
+
+
 def test_should_confine_structure_preservation_evaluator_scipy_to_infrastructure() -> None:
     (
         archrule(

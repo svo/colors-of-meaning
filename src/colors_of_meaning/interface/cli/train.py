@@ -11,7 +11,11 @@ from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter impor
     SentenceEmbeddingAdapter,
 )
 from colors_of_meaning.domain.service.color_mapper import ColorMapper
+from colors_of_meaning.domain.service.color_codebook_factory import ColorCodebookFactory
 from colors_of_meaning.infrastructure.ml.color_mapper_factory import create_color_mapper
+from colors_of_meaning.infrastructure.ml.learned_color_codebook_factory import (
+    LearnedColorCodebookFactory,
+)
 from colors_of_meaning.infrastructure.ml.supervised_pytorch_color_mapper import (
     SupervisedPyTorchColorMapper,
 )
@@ -45,7 +49,12 @@ class TrainArgs:
     output_model: str = "artifacts/models/projector.pth"
     output_codebook: str = "codebook_4096"
     mapper_type: str = "unconstrained"
+    codebook_mode: str = "uniform"
     deterministic: bool = False
+
+
+def _create_codebook_factory(color_mapper: ColorMapper) -> ColorCodebookFactory:
+    return LearnedColorCodebookFactory(color_mapper=color_mapper)
 
 
 def _create_dataset_adapter(dataset_name: str) -> DatasetRepository:
@@ -150,6 +159,7 @@ def _execute_training(
         color_mapper=color_mapper,
         structure_preservation_evaluator=evaluator,
         codebook_repository=codebook_repo,
+        codebook_factory=_create_codebook_factory(color_mapper),
     )
 
     correlation = use_case.execute(
@@ -160,10 +170,13 @@ def _execute_training(
         bins_per_dimension=config.codebook.bins_per_dimension,
         model_name=args.output_model,
         codebook_name=args.output_codebook,
+        codebook_mode=args.codebook_mode,
+        num_bins=config.codebook.num_bins,
+        seed=config.training.seed,
     )
 
     print(f"Model saved to {args.output_model}")
-    print(f"Codebook saved to artifacts/codebooks/{args.output_codebook}.pkl")
+    print(f"Codebook saved to artifacts/codebooks/{args.output_codebook}.pkl ({args.codebook_mode} mode)")
     print(f"Structure-preservation correlation: {correlation:.4f}")
 
 
