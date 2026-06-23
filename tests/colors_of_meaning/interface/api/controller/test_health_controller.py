@@ -1,12 +1,18 @@
+import asyncio
+
 import pytest
 from assertpy import assert_that
+from fastapi import FastAPI, Response, status
 from fastapi.testclient import TestClient
-from fastapi import FastAPI, status
 from unittest.mock import MagicMock
 
 from colors_of_meaning.application.use_case.health_use_case import HealthUseCase
 from colors_of_meaning.domain.health.health_status import HealthResult, HealthStatus
 from colors_of_meaning.interface.api.controller.health_controller import create_health_controller
+from colors_of_meaning.interface.api.data_transfer_object.health_dto import (
+    LivenessResponseDataTransferObject,
+    ReadinessResponseDataTransferObject,
+)
 
 
 @pytest.fixture
@@ -33,6 +39,10 @@ def app(mock_health_use_case):
 @pytest.fixture
 def client(app):
     return TestClient(app)
+
+
+def _route_endpoint(controller, path):
+    return next(route.endpoint for route in controller.routes if route.path == path)
 
 
 class TestHealthController:
@@ -90,9 +100,33 @@ class TestHealthController:
 
         assert_that(response.json()).contains_entry({"status": "not_ready"})
 
+    def test_should_report_missing_codebook_component_when_readiness_unhealthy(self, client, mock_health_use_case):
+        details = {"codebook": {"status": False, "message": "Codebook artifact is missing"}}
+        mock_health_use_case.check_readiness.return_value = HealthResult(HealthStatus.UNHEALTHY, details)
+
+        response = client.get("/health/ready")
+
+        assert_that(response.json()["checks"]["codebook"]["message"]).is_equal_to("Codebook artifact is missing")
+
     def test_should_return_down_status_for_unhealthy_liveness(self, client, mock_health_use_case):
         mock_health_use_case.check_liveness.return_value = HealthResult(HealthStatus.UNHEALTHY)
 
         response = client.get("/health/live")
 
         assert_that(response.json()).contains_entry({"status": "down"})
+
+    def test_should_return_liveness_dto_instance(self, mock_health_use_case):
+        controller = create_health_controller(mock_health_use_case)
+        liveness_handler = _route_endpoint(controller, "/health/live")
+
+        result = liveness_handler()
+
+        assert_that(result).is_instance_of(LivenessResponseDataTransferObject)
+
+    def test_should_return_readiness_dto_instance(self, mock_health_use_case):
+        controller = create_health_controller(mock_health_use_case)
+        readiness_handler = _route_endpoint(controller, "/health/ready")
+
+        result = asyncio.run(readiness_handler(Response()))
+
+        assert_that(result).is_instance_of(ReadinessResponseDataTransferObject)
