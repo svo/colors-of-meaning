@@ -77,6 +77,24 @@ def test_should_follow_security_module_architecture():
     )
 
 
+def _does_not_import_argon2(module, direct_imports, all_imports):
+    return not any(
+        imported == "argon2" or imported.startswith("argon2.") for imported in all_imports.get(module, set())
+    )
+
+
+def test_should_confine_password_hashing_to_security_module():
+    (
+        archrule(
+            "Password Hashing Confinement",
+            comment="Argon2 password hashing must stay out of domain and application layers",
+        )
+        .match("colors_of_meaning.domain.*", "colors_of_meaning.application.*")
+        .should(_does_not_import_argon2, "does_not_import_argon2")
+        .check("colors_of_meaning")
+    )
+
+
 def test_should_not_have_circular_dependencies():
     (
         archrule(

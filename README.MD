@@ -411,6 +411,25 @@ tox -e format
 ./bin/run-local -c
 ```
 
+### API Authentication (local development)
+
+The API basic-auth path never stores or ships a plaintext password. The admin
+credential is supplied at runtime as an **Argon2id password hash** read from the
+`APP_ADMIN_PASSWORD_HASH` environment variable; no usable credential is committed
+to the repository. Generate a throwaway hash and export it without writing the
+secret to any tracked file:
+
+```bash
+export APP_ADMIN_PASSWORD_HASH="$(python -m colors_of_meaning.interface.cli.hash_password)"
+```
+
+The command prompts for a password (input is not echoed) and prints only its
+Argon2id hash, which the command substitution captures into the environment. With
+`APP_ADMIN_PASSWORD_HASH` exported, authenticate as the `admin` user (override the
+username with `APP_ADMIN`) using the password you entered. If the variable is
+unset the authenticator fails closed: every login is refused and a warning is
+logged that authentication is unavailable.
+
 ## Architecture
 
 This project follows Hexagonal Architecture (Ports and Adapters) combined with Domain-Driven Design principles:

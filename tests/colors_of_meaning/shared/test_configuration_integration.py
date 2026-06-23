@@ -16,7 +16,7 @@ from colors_of_meaning.shared.configuration import get_application_setting_provi
 
 provider = get_application_setting_provider()
 print(f"admin={provider.get('admin')}")
-print(f"password={provider.get('password')}")
+print(f"admin_password_hash={provider.get('admin_password_hash')}")
 """
 
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as temp_file:
@@ -26,12 +26,12 @@ print(f"password={provider.get('password')}")
     try:
         env = os.environ.copy()
         env["APP_ADMIN"] = "env_admin"
-        env["APP_PASSWORD"] = "env_password"
+        env["APP_ADMIN_PASSWORD_HASH"] = "env_hash_value"
 
         result = subprocess.run([sys.executable, temp_file_path], env=env, check=True, capture_output=True, text=True)
 
         assert_that(result.stdout).contains("admin=env_admin")
-        assert_that(result.stdout).contains("password=env_password")
+        assert_that(result.stdout).contains("admin_password_hash=env_hash_value")
 
     finally:
         Path(temp_file_path).unlink(missing_ok=True)
@@ -45,7 +45,7 @@ from colors_of_meaning.shared.configuration import get_application_setting_provi
 
 provider = get_application_setting_provider()
 print(f"admin={provider.get('admin')}")
-print(f"password={provider.get('password')}")
+print(f"admin_password_hash={provider.get('admin_password_hash')}")
 """
 
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as temp_file:
@@ -56,13 +56,13 @@ print(f"password={provider.get('password')}")
         env = os.environ.copy()
         if "APP_ADMIN" in env:
             del env["APP_ADMIN"]
-        if "APP_PASSWORD" in env:
-            del env["APP_PASSWORD"]
+        if "APP_ADMIN_PASSWORD_HASH" in env:
+            del env["APP_ADMIN_PASSWORD_HASH"]
 
         result = subprocess.run([sys.executable, temp_file_path], env=env, check=True, capture_output=True, text=True)
 
         assert_that(result.stdout).contains_ignoring_case("admin=")
-        assert_that(result.stdout).contains_ignoring_case("password=")
+        assert_that(result.stdout).contains_ignoring_case("admin_password_hash=")
 
     finally:
         Path(temp_file_path).unlink(missing_ok=True)

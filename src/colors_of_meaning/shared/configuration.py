@@ -21,7 +21,7 @@ def load_properties_file(file_path: str) -> Dict[str, str]:
 
 class ApplicationSettings(BaseSettings):
     admin: str = "admin"
-    password: str = "password"
+    admin_password_hash: str = ""
     reload: bool = False
     host: str = ""
 

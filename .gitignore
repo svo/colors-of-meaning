@@ -58,6 +58,9 @@ MANIFEST
 .conda*/
 .python-version
 
+# Local secrets (developer-exported credential hashes)
+.env
+
 # Artifacts (models, codebooks, encoded documents)
 artifacts/
 

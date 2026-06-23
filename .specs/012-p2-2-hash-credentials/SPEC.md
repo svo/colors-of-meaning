@@ -1,0 +1,80 @@
+# Feature: Hash Credentials and Remove Committed Plaintext admin/password
+
+## Overview
+The API basic-auth path stores and compares credentials in plaintext, and ships a real username/password committed to the repository. `infrastructure/security/basic_authentication.py` keeps `self.user_credentials: Dict[str, str]` of raw passwords (`register_user`, line 17) and verifies with `stored_password == password` (line 25), a non-constant-time string compare. `get_basic_authenticator` (lines 55-64) reads `admin` and `password` from the setting provider and registers them as-is. The values come from `shared/configuration.py`, whose `ApplicationSettings` declares `admin: str = "admin"` / `password: str = "password"` defaults (lines 23-24) and overlays them from `resources/application.properties`, a committed file containing `admin=admin` / `password=password` (lines 1-2). That properties file is packaged via `MANIFEST.in` (`graft src/colors_of_meaning/resources`) and tracked in git, so the credential is a committed secret. `bandit -r src` runs under `tox`; the replacement must use a vetted password hasher (no weak `hashlib`, no `B105/B106` hardcoded-password literals) and remain bandit-clean.
+
+This feature replaces the plaintext store-and-compare with verify-against-a-password-hash using a constant-time verifier from a maintained hashing library (`argon2-cffi`, justified under Dependency Injection and Open Questions). The committed plaintext `admin`/`password` are removed; the authenticator is seeded from a password **hash** sourced from the environment (an `APP_*` setting), never from a tracked file. A documented local-dev story lets developers generate and export a throwaway hash without committing one, and tests supply a known hash computed at test time so no real secret is committed.
+
+## User Stories
+- As a security reviewer, I want stored credentials kept only as a salted password hash and compared in constant time so that a repository or memory disclosure does not reveal a usable password and timing does not leak it.
+- As a release engineer, I want the committed plaintext `admin`/`password` removed from `resources/application.properties` and the packaged artifact so that cloning or installing the project never ships a working credential.
+- As an operator, I want the admin password hash supplied at runtime from an environment-sourced setting so that rotating the credential needs no code or committed-file change.
+- As a developer running the API locally, I want a documented one-command way to generate a throwaway password hash and export it so that I can authenticate in dev without inventing or committing a secret.
+- As a maintainer guarding the `tox` gates, I want the hashing dependency declared in `setup.cfg` and `pyproject.toml` and the verifier free of bandit and pip-audit findings so that the security gate passes and coverage stays 100%.
+
+## Acceptance Criteria
+- [ ] Given a `BasicAuthenticator` seeded with a username and a precomputed password hash, when `verify_credentials(username, correct_password)` is called, then it returns `True` by verifying the supplied password against the stored hash (not by string-comparing plaintext).
+- [ ] Given the same authenticator, when `verify_credentials(username, wrong_password)` is called, then it returns `False`, and when the username is unknown it returns `False` without performing a real verification that could leak timing.
+- [ ] Given the authenticator's credential store, when its contents are inspected, then no entry equals a plaintext password; only a password hash string (Argon2id PHC format, prefixed `$argon2`) is retained.
+- [ ] Given password verification, when a correct and an incorrect password are checked, then the comparison is constant-time as provided by the hashing library's `verify` (no `==` on secrets in the verifier path).
+- [ ] Given `resources/application.properties`, when the repository is inspected, then it contains no `admin=` plaintext-username credential line and no `password=` plaintext-password line; the runtime password hash is not present in any committed file.
+- [ ] Given `ApplicationSettings`, when no credential is configured, then the password hash is read from an `APP_*`-prefixed environment-sourced setting (e.g. `APP_ADMIN_PASSWORD_HASH`) and the prior `password: str = "password"` plaintext default is removed (no usable default credential remains).
+- [ ] Given `get_basic_authenticator`, when it builds the authenticator, then it reads the admin username and the admin password **hash** from the setting provider and registers the hash, never a plaintext password.
+- [ ] Given the FastAPI app, when a request presents the configured username and the password whose hash is exported in the environment, then the protected route returns 200; with any other password it returns 401 with `WWW-Authenticate: Basic` (existing `SecurityDependency` behaviour preserved).
+- [ ] Given the local-dev workflow, when a developer follows the documented step, then they can generate a throwaway hash and export it via the documented environment variable and authenticate, without any secret being committed.
+- [ ] Given the test suite, when auth tests run, then they compute a known hash at test time (fixture) and assert verification, so no real or committed secret is used; mypy, bandit, semgrep and pip-audit pass and coverage stays 100%.
+- [ ] Given the full suite, when `tox` runs, then all gates pass (flake8, black, bandit, semgrep, xenon, radon, mypy, pip-audit), every new test has one logical assertion and is named `test_should_..._when_...`, and no comments are introduced.
+
+## Hexagonal Layer Impact
+
+### Domain Layer (`src/colors_of_meaning/domain/`)
+- `domain/authentication/authenticator.py`: the `Authenticator` ABC keeps its single contract `verify_credentials(self, username: str, password: str) -> bool` (line 6) unchanged — the port is already hash-agnostic (callers pass the cleartext attempt; the implementation decides how to check it). No new abstract method is required for the headline fix. Whether to add an explicit `register_user(username, password_hash)` to the port (it is currently only on the concrete `BasicAuthenticator`, not the ABC) is an Open Question; the domain stays free of any hashing-library import either way.
+
+### Application Layer (`src/colors_of_meaning/application/`)
+No changes. No use case constructs or consumes the authenticator; basic auth is wired entirely in interface/infrastructure (`get_basic_authenticator`, `interface/api/main.py`). The application layer continues to import domain only.
+
+### Infrastructure Layer (`src/colors_of_meaning/infrastructure/`)
+Primary scope.
+- `infrastructure/security/basic_authentication.py`:
+  - `register_user` (line 17) is renamed/retargeted to store a **password hash** rather than a plaintext password; `self.user_credentials` (line 14) becomes a map of username to hash string (name may change to reflect that it holds hashes, e.g. `self.user_password_hashes`).
+  - `verify_credentials` (lines 19-25) replaces `stored_password == password` with a constant-time hash verification: look up the stored hash; if absent return `False`; otherwise verify the supplied cleartext against the stored hash using the hashing library's `verify`, returning `False` on mismatch (catching the library's verification-mismatch exception rather than letting it propagate). No `==` on secret material remains, eliminating the timing side-channel and any `B105/B106` literal.
+  - `get_basic_authenticator` (lines 55-64) reads the admin username and the admin password **hash** from the setting provider (`setting_provider.get("admin")` for the username; a new key such as `setting_provider.get("admin_password_hash")` for the hash) and registers the hash. It no longer reads a plaintext `password`.
+  - `SecurityDependency` (lines 28-52) and the `get_security_dependency` factory (lines 67-68) are unchanged; they already delegate to `verify_credentials` and raise 401 with `WWW-Authenticate: Basic`.
+- The hashing library (`argon2-cffi`, `PasswordHasher`) is used only inside this module (and its tests/dev helper), keeping the dependency confined to infrastructure. A small wrapper or module-level `PasswordHasher` instance provides `hash`/`verify`; this is the only place that imports `argon2`.
+
+### Interface Layer (`src/colors_of_meaning/interface/`)
+- `interface/api/main.py`: unchanged in structure (lines 43-46 build the authenticator via `get_basic_authenticator()` and register it in the Lagom `Container()`); it transparently receives the hash-seeded authenticator. No route or DI change is required beyond what `get_basic_authenticator` already encapsulates.
+- A local-dev helper to generate a throwaway hash is needed for the documented workflow. Preferred placement is a tiny CLI entry (e.g. `interface/cli/hash_password.py`) that prints an Argon2 hash for a password read from stdin/prompt, so developers never type a secret into a tracked file; whether to add this CLI versus documenting a one-line `python -c`/`argon2` invocation is an Open Question. If added it lives in interface and imports the infrastructure hasher.
+
+### Shared Layer
+- `shared/configuration.py`:
+  - Remove the plaintext password default: `password: str = "password"` (line 24) is deleted; a new field for the admin password **hash** is added (e.g. `admin_password_hash: str = ""`), populated from `APP_ADMIN_PASSWORD_HASH` via the existing `env_prefix="APP_"` mechanism (lines 28-32) and overlayable through `_apply_property` (lines 53-55). The `admin` username field (line 23) may remain with its non-secret `"admin"` default. An empty hash with no env value should fail closed (no usable credential), mirroring the existing host-not-set guard in `_get_from_settings` (lines 76-77) — exact fail-closed behaviour is an Open Question.
+  - `load_properties_file` (lines 9-19), `ApplicationSettingProvider` (lines 58-80) and `get_application_setting_provider` (lines 83-84) keep their shapes; only the set of keys changes.
+- `resources/application.properties`: the `admin=admin` and `password=password` lines (lines 1-2) are removed. `reload=false` and `host=0.0.0.0` (lines 3-4) are non-secret operational settings and remain. The runtime hash is supplied via environment, not re-added to this file.
+- `resources/__init__.py` (`get_resource_path`, lines 4-12) is unchanged; the properties file still loads, now without credentials.
+
+## API Contracts
+No changes to request/response schemas. No new endpoints and no Pydantic DTO changes. The HTTP authentication behaviour is preserved: protected routes still return 200 with valid credentials and 401 with `WWW-Authenticate: Basic` otherwise (covered by the existing `SecurityDependency` tests). A producer/CDCT-style test asserts the 401-vs-200 contract continues to hold with the hash-backed authenticator. Endpoints continue to return Pydantic DTOs as mandated.
+
+## CLI Impact
+No change to existing analysis CLIs (`train`, `encode`, `compare`, `compress`, `eval`, `visualize`, `query`). The only possible addition is the optional local-dev `hash_password` helper described under Interface Layer, which prints a hash for a prompted password and never writes a secret to disk. Whether to ship it as a CLI is an Open Question.
+
+## Dependency Injection
+Consistent with project reality. The authenticator is built by the `get_basic_authenticator` factory and registered in the API's Lagom `Container()` (`interface/api/main.py` lines 43-46) as today; only what the factory reads from the setting provider changes (a hash instead of a plaintext password). The hashing library is introduced as a new runtime dependency:
+- `setup.cfg` `[options] install_requires` gains `argon2-cffi`.
+- `pyproject.toml` declares no separate runtime-deps table today (deps live in `setup.cfg`), so no pin is duplicated there unless a constraint is wanted; `pip-audit` runs over the resolved environment under `tox` and must stay green.
+**Library choice:** `argon2-cffi` is selected. It exposes `PasswordHasher.hash()` / `PasswordHasher.verify()` with built-in constant-time verification and Argon2id (OWASP-recommended password KDF), keeps bandit clean (no `hashlib` weak-hash/`B303/B324`, no hardcoded-password literal), and is actively maintained. The alternative `passlib[bcrypt]` is recorded in Open Questions; it is in low-maintenance status, which is the justification for preferring `argon2-cffi`. The `PasswordHasher` is constructed once (module-level or via a thin infrastructure provider) and injected/used only in `basic_authentication.py`, never instantiated ad hoc by callers.
+
+## Observability
+Reuse the existing `infrastructure/observability/` conventions (structured JSON, `correlation-id`). Emit an authentication-outcome log on each verification (success/failure with username and correlation-id) and on startup a single line recording that the authenticator was seeded from an environment-sourced hash. **No secret is ever logged** — never the password, never the hash; bandit/semgrep must not flag credential logging. Optionally emit a counter metric for auth success/failure. The fail-closed path (no hash configured) logs a warning that auth is unavailable rather than silently allowing access.
+
+## Open Questions
+- Hashing library: confirm `argon2-cffi` (`PasswordHasher`, Argon2id, constant-time `verify`, bandit-clean, maintained) over `passlib[bcrypt]` (broader scheme support but low-maintenance). Both are pip-audit-checked; the SPEC assumes `argon2-cffi`.
+- Hash source: this SPEC sources the admin password hash from an `APP_*` environment-sourced setting (`APP_ADMIN_PASSWORD_HASH`) read by `ApplicationSettings`. Should it instead come from a secret manager / Vault (per the project's secrets guidance) with the env var as the local-dev fallback, and if so does the resolution belong behind the setting provider or a dedicated secrets port?
+- Test secret provisioning: tests should compute a known hash at test time (e.g. a session fixture calling `PasswordHasher().hash("known-test-password")`) and assert `verify_credentials` accepts the matching password and rejects others, so no real or committed hash is used. Confirm this fixture approach and that hashing in tests keeps the suite fast enough (consider Argon2 cost parameters in test config).
+- Fail-closed behaviour when `APP_ADMIN_PASSWORD_HASH` is unset/empty: raise at startup, refuse all logins, or follow the existing host-not-set `ValueError` pattern in `ApplicationSettingProvider._get_from_settings`? Define and test the chosen behaviour.
+- Username handling: should the `admin` username also be required from the environment (removing the `"admin"` default), or is only the password secret? The username is not secret, but a default may be undesirable for hardening.
+- Port shape: should `register_user`/`verify_credentials` move fully onto the `Authenticator` ABC (currently only `verify_credentials` is on the port; `register_user` is concrete-only), and should the parameter be renamed to make "this is a hash, not a password" explicit without leaking the hashing scheme into the domain?
+- Local-dev helper: ship an `interface/cli/hash_password.py` command (prompts for a password, prints an Argon2 hash) versus documenting a one-line invocation? Either way the workflow must guarantee no secret is written to a tracked file.
+- De-committing history: removing the credential from `resources/application.properties` stops shipping it going forward, but the plaintext remains in git history. Is history scrubbing / credential rotation in scope for this step or tracked separately under the security backlog (`016-p2-6-reconcile-docs` / ROADMAP risk register)?
+- Packaging: `MANIFEST.in` still grafts `resources/`; confirm that with credentials removed the packaged `application.properties` carries only non-secret operational settings, and that no `.env` containing the hash is ever packaged (`.gitignore` currently ignores `.venv*/` but not `.env`, so an `.env` ignore entry may be needed to prevent accidental commits).

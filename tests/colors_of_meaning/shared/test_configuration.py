@@ -44,7 +44,7 @@ class TestApplicationSettings:
         mock_get_resource_path.return_value = "dummy/path"
         mock_load_properties.return_value = {
             "admin": "coconuts",
-            "password": "bunch",
+            "admin_password_hash": "$argon2id$dummy",
             "reload": "true",
             "host": "127.0.0.1",
         }
@@ -60,7 +60,7 @@ class TestApplicationSettings:
         mock_get_resource_path.return_value = "dummy/path"
         mock_load_properties.return_value = {
             "admin": "coconuts",
-            "password": "bunch",
+            "admin_password_hash": "$argon2id$dummy",
             "reload": "true",
             "host": "127.0.0.1",
         }
@@ -76,7 +76,7 @@ class TestApplicationSettings:
         mock_get_resource_path.return_value = "dummy/path"
         mock_load_properties.return_value = {
             "admin": "coconuts",
-            "password": "bunch",
+            "admin_password_hash": "$argon2id$dummy",
             "reload": "true",
             "host": "127.0.0.1",
         }
@@ -90,7 +90,7 @@ class TestApplicationSettings:
     @patch("colors_of_meaning.shared.configuration.load_properties_file")
     def test_should_use_environment_variables_over_properties(self, mock_load_properties, mock_get_resource_path):
         mock_get_resource_path.return_value = "dummy/path"
-        mock_load_properties.return_value = {"admin": "coconuts", "password": "bunch"}
+        mock_load_properties.return_value = {"admin": "coconuts", "admin_password_hash": "$argon2id$dummy"}
 
         with patch.dict(os.environ, {"APP_ADMIN": "envadmin"}, clear=True):
             settings = ApplicationSettings()
@@ -134,6 +134,48 @@ class TestApplicationSettings:
             settings = ApplicationSettings()
 
         assert_that(settings.reload).is_true()
+
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    def test_should_not_expose_plaintext_password_attribute(self, mock_get_resource_path):
+        mock_get_resource_path.side_effect = FileNotFoundError
+
+        with patch.dict(os.environ, {"APP_HOST": "127.0.0.1"}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(hasattr(settings, "password")).is_false()
+
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    def test_should_default_admin_password_hash_to_empty_when_unset(self, mock_get_resource_path):
+        mock_get_resource_path.side_effect = FileNotFoundError
+
+        with patch.dict(os.environ, {"APP_HOST": "127.0.0.1"}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(settings.admin_password_hash).is_equal_to("")
+
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    @patch("colors_of_meaning.shared.configuration.load_properties_file")
+    def test_should_read_admin_password_hash_from_environment(self, mock_load_properties, mock_get_resource_path):
+        mock_get_resource_path.return_value = "dummy/path"
+        mock_load_properties.return_value = {"host": "127.0.0.1"}
+
+        with patch.dict(os.environ, {"APP_ADMIN_PASSWORD_HASH": "$argon2id$envhash"}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(settings.admin_password_hash).is_equal_to("$argon2id$envhash")
+
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    @patch("colors_of_meaning.shared.configuration.load_properties_file")
+    def test_should_overlay_admin_password_hash_from_properties_file(
+        self, mock_load_properties, mock_get_resource_path
+    ):
+        mock_get_resource_path.return_value = "dummy/path"
+        mock_load_properties.return_value = {"admin_password_hash": "$argon2id$fromfile", "host": "127.0.0.1"}
+
+        with patch.dict(os.environ, {}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(settings.admin_password_hash).is_equal_to("$argon2id$fromfile")
 
 
 class TestApplicationSettingProvider:

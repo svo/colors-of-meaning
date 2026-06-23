@@ -25,6 +25,14 @@ class TestAuthenticator:
         authenticator = ConcreteAuthenticator()
         assert_that(authenticator).is_not_none()
 
+    def test_should_keep_port_hash_agnostic_when_implemented(self):
+        class CleartextDecidingAuthenticator(Authenticator):
+            def verify_credentials(self, username: str, password: str) -> bool:
+                return password == "cleartext-attempt"
+
+        authenticator = CleartextDecidingAuthenticator()
+        assert_that(authenticator.verify_credentials("user", "cleartext-attempt")).is_true()
+
     def test_should_raise_not_implemented_error(self):
         class PartialAuthenticator(Authenticator):
             def verify_credentials(self, username: str, password: str) -> bool:
