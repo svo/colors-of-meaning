@@ -403,3 +403,27 @@ supervised_mapper:
         loaded = SynestheticConfig.from_yaml(str(config_path))
         assert loaded.supervised_mapper.classification_weight == 0.3
         assert loaded.supervised_mapper.num_classes == 8
+
+
+CONFIGS_DIR = Path(__file__).resolve().parents[3] / "configs"
+
+
+class TestConfigFileBackCompat:
+    def test_should_parse_base_config_unchanged_when_loaded_from_yaml(self) -> None:
+        config = SynestheticConfig.from_yaml(str(CONFIGS_DIR / "base.yaml"))
+
+        assert config.projector.embedding_dim == 384
+        assert config.dataset.name == "ag_news"
+        assert config.dataset.max_samples == 12000
+
+    def test_should_parse_structured_config_unchanged_when_loaded_from_yaml(self) -> None:
+        config = SynestheticConfig.from_yaml(str(CONFIGS_DIR / "structured.yaml"))
+
+        assert config.structured_mapper.num_clusters == 16
+        assert config.structured_mapper.max_chroma == 128.0
+
+    def test_should_parse_supervised_config_unchanged_when_loaded_from_yaml(self) -> None:
+        config = SynestheticConfig.from_yaml(str(CONFIGS_DIR / "supervised.yaml"))
+
+        assert config.supervised_mapper.classification_weight == 0.1
+        assert config.supervised_mapper.num_classes == 4

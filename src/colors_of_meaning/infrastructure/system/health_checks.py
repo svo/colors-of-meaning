@@ -6,11 +6,16 @@ from colors_of_meaning.infrastructure.persistence.file_color_codebook_repository
     FileColorCodebookRepository,
 )
 from colors_of_meaning.infrastructure.persistence.in_memory.shared_storage import SharedStorage
+from colors_of_meaning.shared.configuration import (
+    DEFAULT_CODEBOOK_BASE_PATH as SHARED_CODEBOOK_BASE_PATH,
+    DEFAULT_CODEBOOK_NAME as SHARED_CODEBOOK_NAME,
+    DEFAULT_MODEL_PATH as SHARED_MODEL_PATH,
+)
 
-DEFAULT_CODEBOOK_BASE_PATH = "artifacts/codebooks"
-DEFAULT_CODEBOOK_NAME = "codebook_4096"
-DEFAULT_MODELS_PATH = "artifacts/models"
-DEFAULT_MODEL_FILE = "projector.pth"
+DEFAULT_CODEBOOK_BASE_PATH = SHARED_CODEBOOK_BASE_PATH
+DEFAULT_CODEBOOK_NAME = SHARED_CODEBOOK_NAME
+DEFAULT_MODELS_PATH = str(Path(SHARED_MODEL_PATH).parent)
+DEFAULT_MODEL_FILE = Path(SHARED_MODEL_PATH).name
 
 
 def create_liveness_check() -> Callable[[], bool]:

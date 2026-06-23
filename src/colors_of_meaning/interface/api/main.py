@@ -35,14 +35,23 @@ from colors_of_meaning.interface.api.controller.query_controller import (
     create_query_controller,
     create_unavailable_query_controller,
 )
-from colors_of_meaning.shared.configuration import get_application_setting_provider
+from colors_of_meaning.shared.configuration import (
+    DEFAULT_CODEBOOK_NAME,
+    DEFAULT_CORPUS_PATH,
+    ArtifactPaths,
+    ExperimentConfigurationError,
+    ExperimentRuntimeContext,
+    build_experiment_runtime_context,
+    get_application_setting_provider,
+)
+from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
 
 logger = logging.getLogger(__name__)
 
 APPLICATION_TITLE = "Colors of Meaning API"
 APPLICATION_VERSION = "1.0.0"
-CODEBOOK_NAME = "codebook_4096"
-CORPUS_ARTIFACT_PATH = "artifacts/encoded/test_documents.pkl"
+CODEBOOK_NAME = DEFAULT_CODEBOOK_NAME
+CORPUS_ARTIFACT_PATH = DEFAULT_CORPUS_PATH
 DISTANCE_METRIC = "wasserstein"
 FALLBACK_BINS_PER_DIMENSION = 16
 SINKHORN_REGULARISATION: Optional[float] = None
@@ -54,26 +63,28 @@ def _correlation_id() -> str:
     return str(uuid.uuid4())
 
 
-def _load_query_codebook() -> ColorCodebook:
-    codebook = FileColorCodebookRepository().load(CODEBOOK_NAME)
+def _load_query_codebook(artifact_paths: ArtifactPaths = ArtifactPaths()) -> ColorCodebook:
+    repository = FileColorCodebookRepository(artifact_paths.codebook_base_path)
+    codebook = repository.load(artifact_paths.codebook_name)
     if codebook is not None:
         return codebook
 
     logger.warning(
         "Codebook artifact absent; falling back to uniform grid",
-        extra={"correlation_id": _correlation_id(), "expected_codebook": CODEBOOK_NAME},
+        extra={"correlation_id": _correlation_id(), "expected_codebook": artifact_paths.codebook_name},
     )
     return ColorCodebook.create_uniform_grid(FALLBACK_BINS_PER_DIMENSION)
 
 
-def _load_corpus() -> Optional[List[ColoredDocument]]:
+def _load_corpus(corpus_path: Optional[str] = None) -> Optional[List[ColoredDocument]]:
+    resolved_path = corpus_path or CORPUS_ARTIFACT_PATH
     try:
-        with open(CORPUS_ARTIFACT_PATH, "rb") as artifact:
+        with open(resolved_path, "rb") as artifact:
             return cast(List[ColoredDocument], pickle.load(artifact))  # nosec B301 nosemgrep
     except FileNotFoundError:
         logger.warning(
             "Encoded corpus artifact absent; query endpoint degraded",
-            extra={"correlation_id": _correlation_id(), "expected_corpus": CORPUS_ARTIFACT_PATH},
+            extra={"correlation_id": _correlation_id(), "expected_corpus": resolved_path},
         )
         return None
 
@@ -84,10 +95,43 @@ def _select_distance_calculator(metric: str, codebook: ColorCodebook) -> Distanc
     return WassersteinDistanceCalculator(codebook=codebook, sinkhorn_reg=SINKHORN_REGULARISATION)
 
 
-def get_container() -> Container:
+def _log_experiment_resolution(runtime_context: ExperimentRuntimeContext) -> None:
+    artifact_paths = runtime_context.artifact_paths
+    logger.info(
+        "Experiment configuration resolved",
+        extra={
+            "correlation_id": _correlation_id(),
+            "experiment_config_path": runtime_context.experiment_config_path,
+            "model_path": artifact_paths.model_path,
+            "codebook_name": artifact_paths.codebook_name,
+            "corpus_path": artifact_paths.corpus_path,
+        },
+    )
+
+
+def _resolve_runtime_context() -> ExperimentRuntimeContext:
+    try:
+        runtime_context = build_experiment_runtime_context()
+    except ExperimentConfigurationError as error:
+        logger.error(
+            "Experiment configuration could not be resolved",
+            extra={"correlation_id": _correlation_id(), "reason": str(error)},
+        )
+        raise
+
+    _log_experiment_resolution(runtime_context)
+    return runtime_context
+
+
+def get_container(runtime_context: Optional[ExperimentRuntimeContext] = None) -> Container:
     container = Container()
 
-    codebook = _load_query_codebook()
+    context = runtime_context if runtime_context is not None else _resolve_runtime_context()
+    container[ExperimentRuntimeContext] = lambda: context
+    container[SynestheticConfig] = lambda: context.synesthetic_config
+    container[ArtifactPaths] = lambda: context.artifact_paths
+
+    codebook = _load_query_codebook(context.artifact_paths)
 
     container[ColorCodebook] = lambda: codebook
     container[DistanceCalculator] = lambda: _select_distance_calculator(DISTANCE_METRIC, codebook)  # type: ignore
@@ -106,11 +150,14 @@ def get_container() -> Container:
     return container
 
 
-global_container = get_container()
+_global_container: Optional[Container] = None
 
 
 def get_global_container() -> Container:
-    return global_container
+    global _global_container
+    if _global_container is None:
+        _global_container = get_container()
+    return _global_container
 
 
 def _build_query_router(container: Container, corpus: Optional[List[ColoredDocument]]) -> APIRouter:
@@ -137,7 +184,7 @@ def create_app() -> FastAPI:
 
     container = get_container()
     codebook = container[ColorCodebook]
-    corpus = _load_corpus()
+    corpus = _load_corpus(container[ArtifactPaths].corpus_path)
 
     application.include_router(_build_query_router(container, corpus))
     application.include_router(create_health_controller(container[HealthUseCase]))

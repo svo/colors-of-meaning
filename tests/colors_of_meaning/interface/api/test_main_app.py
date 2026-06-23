@@ -1,18 +1,21 @@
 import sys
 import os
 import json
+import importlib
+import logging
 
 import numpy as np
+import pytest
 from assertpy import assert_that
 from fastapi.openapi.utils import get_openapi
 from fastapi.testclient import TestClient
+from lagom import Container
 from unittest.mock import patch, Mock, mock_open
 
 import colors_of_meaning.interface.api.main as main_module
 from colors_of_meaning.interface.api.main import (
     app,
     get_container,
-    global_container,
     get_global_container,
     create_app,
     main,
@@ -28,6 +31,19 @@ from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import 
 from colors_of_meaning.interface.api.data_transfer_object.palette_query_dto import (
     PaletteQueryResponseDTO,
     QueryUnavailableDTO,
+)
+from colors_of_meaning.shared.configuration import (
+    ArtifactPaths,
+    ExperimentConfigurationError,
+    ExperimentRuntimeContext,
+)
+from colors_of_meaning.shared.synesthetic_config import (
+    SynestheticConfig,
+    ProjectorConfig,
+    CodebookConfig,
+    TrainingConfig,
+    DistanceConfig,
+    DatasetConfig,
 )
 
 OPENAPI_JSON_FILE_PATH = "build/openapi.json"
@@ -55,6 +71,21 @@ def _build_query_client(corpus: list) -> TestClient:
     with patch.object(main_module, "_load_query_codebook", return_value=_tiny_codebook()):
         with patch.object(main_module, "_load_corpus", return_value=corpus):
             return TestClient(create_app())
+
+
+def _in_memory_runtime_context() -> ExperimentRuntimeContext:
+    config = SynestheticConfig(
+        projector=ProjectorConfig(),
+        codebook=CodebookConfig(),
+        training=TrainingConfig(),
+        distance=DistanceConfig(),
+        dataset=DatasetConfig(),
+    )
+    return ExperimentRuntimeContext(
+        experiment_config_path="configs/base.yaml",
+        synesthetic_config=config,
+        artifact_paths=ArtifactPaths(),
+    )
 
 
 def create_openapi_json(app):
@@ -96,9 +127,6 @@ class TestMainApp:
 
         assert_that(container).is_not_none()
 
-    def test_should_have_global_container(self):
-        assert_that(global_container).is_not_none()
-
     def test_should_expose_query_palette_route_when_app_is_built(self):
         paths = app.openapi().get("paths", {})
 
@@ -113,11 +141,6 @@ class TestMainApp:
         paths = app.openapi().get("paths", {})
 
         assert_that(paths).does_not_contain_key("/coconut/{id}")
-
-    def test_should_get_global_container(self):
-        container = get_global_container()
-
-        assert_that(container).is_same_as(global_container)
 
     @patch("uvicorn.run")
     @patch("colors_of_meaning.interface.api.main.get_application_setting_provider")
@@ -212,6 +235,22 @@ class TestQueryArtifactLoaders:
 
         assert_that(loaded).is_none()
 
+    def test_should_load_codebook_named_by_artifact_paths_when_paths_supplied(self):
+        paths = ArtifactPaths(codebook_base_path="artifacts/codebooks", codebook_name="experiment_book")
+
+        with patch.object(main_module, "FileColorCodebookRepository") as repository_class:
+            repository_class.return_value.load.return_value = _tiny_codebook()
+            main_module._load_query_codebook(paths)
+
+        repository_class.return_value.load.assert_called_once_with("experiment_book")
+
+    def test_should_read_supplied_corpus_path_when_path_provided(self, tmp_path):
+        missing = tmp_path / "supplied.pkl"
+
+        loaded = main_module._load_corpus(str(missing))
+
+        assert_that(loaded).is_none()
+
 
 class TestDistanceCalculatorSelection:
     def test_should_select_wasserstein_when_metric_is_wasserstein(self):
@@ -248,3 +287,69 @@ class TestQueryApiContract:
 
         assert response.status_code == 503
         assert QueryUnavailableDTO.model_validate(response.json())
+
+
+class TestExperimentRuntimeWiring:
+    def test_should_resolve_runtime_context_from_container_when_built(self):
+        context = _in_memory_runtime_context()
+
+        container = get_container(context)
+
+        assert_that(container[ExperimentRuntimeContext]).is_same_as(context)
+
+    def test_should_resolve_synesthetic_config_from_container_when_built(self):
+        context = _in_memory_runtime_context()
+
+        container = get_container(context)
+
+        assert_that(container[SynestheticConfig]).is_same_as(context.synesthetic_config)
+
+    def test_should_resolve_artifact_paths_from_container_when_built(self):
+        context = _in_memory_runtime_context()
+
+        container = get_container(context)
+
+        assert_that(container[ArtifactPaths]).is_same_as(context.artifact_paths)
+
+
+class TestRuntimeContextResolution:
+    def test_should_return_context_when_experiment_config_resolves(self):
+        context = main_module._resolve_runtime_context()
+
+        assert_that(context).is_instance_of(ExperimentRuntimeContext)
+
+    def test_should_reraise_when_experiment_config_cannot_be_resolved(self):
+        with patch.object(
+            main_module,
+            "build_experiment_runtime_context",
+            side_effect=ExperimentConfigurationError("boom"),
+        ):
+            with pytest.raises(ExperimentConfigurationError):
+                main_module._resolve_runtime_context()
+
+
+class TestContainerConstruction:
+    def test_should_build_container_once_when_module_is_imported(self):
+        importlib.reload(main_module)
+
+        assert_that(main_module._global_container).is_none()
+
+    def test_should_return_usable_container_from_get_global_container(self):
+        main_module._global_container = None
+
+        assert_that(get_global_container()).is_instance_of(Container)
+
+    def test_should_cache_global_container_across_calls(self):
+        main_module._global_container = None
+
+        first = get_global_container()
+        second = get_global_container()
+
+        assert_that(first).is_same_as(second)
+
+    def test_should_emit_fail_closed_warning_at_most_once_when_module_is_imported(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            importlib.reload(main_module)
+
+        fail_closed = [record for record in caplog.records if "authentication unavailable" in record.getMessage()]
+        assert_that(len(fail_closed)).is_less_than_or_equal_to(1)

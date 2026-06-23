@@ -1,9 +1,17 @@
 import os
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from colors_of_meaning.resources import get_resource_path
+from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
+
+DEFAULT_EXPERIMENT_CONFIG_PATH = "configs/base.yaml"
+DEFAULT_CODEBOOK_BASE_PATH = "artifacts/codebooks"
+DEFAULT_CODEBOOK_NAME = "codebook_4096"
+DEFAULT_MODEL_PATH = "artifacts/models/projector.pth"
+DEFAULT_CORPUS_PATH = "artifacts/encoded/test_documents.pkl"
 
 
 def load_properties_file(file_path: str) -> Dict[str, str]:
@@ -24,6 +32,7 @@ class ApplicationSettings(BaseSettings):
     admin_password_hash: str = ""
     reload: bool = False
     host: str = ""
+    experiment_config: str = DEFAULT_EXPERIMENT_CONFIG_PATH
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -82,3 +91,44 @@ class ApplicationSettingProvider:
 
 def get_application_setting_provider() -> ApplicationSettingProvider:
     return ApplicationSettingProvider()
+
+
+@dataclass(frozen=True)
+class ArtifactPaths:
+    model_path: str = DEFAULT_MODEL_PATH
+    codebook_base_path: str = DEFAULT_CODEBOOK_BASE_PATH
+    codebook_name: str = DEFAULT_CODEBOOK_NAME
+    corpus_path: str = DEFAULT_CORPUS_PATH
+
+
+@dataclass(frozen=True)
+class ExperimentRuntimeContext:
+    experiment_config_path: str
+    synesthetic_config: SynestheticConfig
+    artifact_paths: ArtifactPaths
+
+
+class ExperimentConfigurationError(RuntimeError):
+    pass
+
+
+def _load_experiment_config(path: str) -> SynestheticConfig:
+    try:
+        return SynestheticConfig.from_yaml(path)
+    except OSError as error:
+        raise ExperimentConfigurationError(f"Experiment config could not be loaded from '{path}'") from error
+
+
+def build_experiment_runtime_context(
+    settings_provider: Optional[ApplicationSettingProvider] = None,
+    synesthetic_config: Optional[SynestheticConfig] = None,
+    artifact_paths: Optional[ArtifactPaths] = None,
+) -> ExperimentRuntimeContext:
+    provider = settings_provider or get_application_setting_provider()
+    experiment_config_path = provider.get("experiment_config")
+    resolved_config = synesthetic_config or _load_experiment_config(experiment_config_path)
+    return ExperimentRuntimeContext(
+        experiment_config_path=experiment_config_path,
+        synesthetic_config=resolved_config,
+        artifact_paths=artifact_paths or ArtifactPaths(),
+    )

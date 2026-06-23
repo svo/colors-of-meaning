@@ -1,3 +1,5 @@
+import importlib
+
 from pytest_archon.rule import archrule
 
 
@@ -145,6 +147,30 @@ def test_should_maintain_shared_module_independence() -> None:
         )
         .check("colors_of_meaning")
     )
+
+
+def test_should_not_import_configuration_module_in_domain_layer() -> None:
+    (
+        archrule(
+            "Domain Configuration Isolation",
+            comment="Domain layer must stay free of configuration-loading concerns",
+        )
+        .match("colors_of_meaning.domain.*")
+        .should_not_import(
+            "colors_of_meaning.shared.configuration",
+            "colors_of_meaning.shared.synesthetic_config",
+        )
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_allow_all_layers_to_import_shared() -> None:
+    shared_modules = [
+        importlib.import_module("colors_of_meaning.shared.configuration"),
+        importlib.import_module("colors_of_meaning.shared.synesthetic_config"),
+    ]
+
+    assert all(module is not None for module in shared_modules)
 
 
 def test_should_not_have_circular_dependencies() -> None:

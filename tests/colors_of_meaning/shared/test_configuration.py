@@ -7,8 +7,30 @@ from assertpy import assert_that
 from colors_of_meaning.shared.configuration import (
     ApplicationSettings,
     ApplicationSettingProvider,
+    ArtifactPaths,
+    ExperimentConfigurationError,
+    ExperimentRuntimeContext,
+    build_experiment_runtime_context,
     load_properties_file,
 )
+from colors_of_meaning.shared.synesthetic_config import (
+    SynestheticConfig,
+    ProjectorConfig,
+    CodebookConfig,
+    TrainingConfig,
+    DistanceConfig,
+    DatasetConfig,
+)
+
+
+def _in_memory_config() -> SynestheticConfig:
+    return SynestheticConfig(
+        projector=ProjectorConfig(),
+        codebook=CodebookConfig(),
+        training=TrainingConfig(),
+        distance=DistanceConfig(),
+        dataset=DatasetConfig(),
+    )
 
 
 class TestLoadPropertiesFile:
@@ -177,6 +199,50 @@ class TestApplicationSettings:
 
         assert_that(settings.admin_password_hash).is_equal_to("$argon2id$fromfile")
 
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    def test_should_default_experiment_config_when_missing_properties_file(self, mock_get_resource_path):
+        mock_get_resource_path.side_effect = FileNotFoundError
+
+        with patch.dict(os.environ, {"APP_HOST": "127.0.0.1"}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(settings.experiment_config).is_equal_to("configs/base.yaml")
+
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    @patch("colors_of_meaning.shared.configuration.load_properties_file")
+    def test_should_load_experiment_config_from_properties_file(self, mock_load_properties, mock_get_resource_path):
+        mock_get_resource_path.return_value = "dummy/path"
+        mock_load_properties.return_value = {"experiment_config": "configs/structured.yaml", "host": "127.0.0.1"}
+
+        with patch.dict(os.environ, {}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(settings.experiment_config).is_equal_to("configs/structured.yaml")
+
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    @patch("colors_of_meaning.shared.configuration.load_properties_file")
+    def test_should_read_experiment_config_from_environment(self, mock_load_properties, mock_get_resource_path):
+        mock_get_resource_path.return_value = "dummy/path"
+        mock_load_properties.return_value = {"experiment_config": "configs/structured.yaml", "host": "127.0.0.1"}
+
+        with patch.dict(os.environ, {"APP_EXPERIMENT_CONFIG": "configs/supervised.yaml"}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(settings.experiment_config).is_equal_to("configs/supervised.yaml")
+
+    @patch("colors_of_meaning.shared.configuration.get_resource_path")
+    @patch("colors_of_meaning.shared.configuration.load_properties_file")
+    def test_should_keep_host_setting_when_experiment_config_is_configured(
+        self, mock_load_properties, mock_get_resource_path
+    ):
+        mock_get_resource_path.return_value = "dummy/path"
+        mock_load_properties.return_value = {"host": "127.0.0.1", "experiment_config": "configs/structured.yaml"}
+
+        with patch.dict(os.environ, {}, clear=True):
+            settings = ApplicationSettings()
+
+        assert_that(settings.host).is_equal_to("127.0.0.1")
+
 
 class TestApplicationSettingProvider:
     @patch("colors_of_meaning.shared.configuration.ApplicationSettings")
@@ -255,3 +321,98 @@ class TestApplicationSettingProvider:
             provider.get("host")
 
         assert_that(str(excinfo.value)).contains("Host setting not found")
+
+    def test_should_resolve_experiment_config_when_overridden(self):
+        provider = ApplicationSettingProvider()
+        provider.override("experiment_config", "configs/structured.yaml")
+
+        assert_that(provider.get("experiment_config")).is_equal_to("configs/structured.yaml")
+
+
+class TestArtifactPaths:
+    def test_should_default_model_path_when_unspecified(self):
+        assert_that(ArtifactPaths().model_path).is_equal_to("artifacts/models/projector.pth")
+
+    def test_should_default_codebook_base_path_when_unspecified(self):
+        assert_that(ArtifactPaths().codebook_base_path).is_equal_to("artifacts/codebooks")
+
+    def test_should_default_codebook_name_when_unspecified(self):
+        assert_that(ArtifactPaths().codebook_name).is_equal_to("codebook_4096")
+
+    def test_should_default_corpus_path_when_unspecified(self):
+        assert_that(ArtifactPaths().corpus_path).is_equal_to("artifacts/encoded/test_documents.pkl")
+
+
+class TestBuildExperimentRuntimeContext:
+    def test_should_load_synesthetic_config_when_experiment_path_is_configured(self, tmp_path):
+        config_path = tmp_path / "experiment.yaml"
+        config_path.write_text("projector:\n  embedding_dim: 256\n")
+        provider = ApplicationSettingProvider()
+        provider.override("experiment_config", str(config_path))
+
+        context = build_experiment_runtime_context(settings_provider=provider)
+
+        assert_that(context.synesthetic_config.projector.embedding_dim).is_equal_to(256)
+
+    def test_should_record_experiment_config_path_when_context_is_built(self, tmp_path):
+        config_path = tmp_path / "experiment.yaml"
+        config_path.write_text("{}")
+        provider = ApplicationSettingProvider()
+        provider.override("experiment_config", str(config_path))
+
+        context = build_experiment_runtime_context(settings_provider=provider)
+
+        assert_that(context.experiment_config_path).is_equal_to(str(config_path))
+
+    def test_should_use_injected_config_when_override_is_provided(self):
+        provider = ApplicationSettingProvider()
+        provider.override("experiment_config", "configs/base.yaml")
+        injected = _in_memory_config()
+
+        with patch.object(SynestheticConfig, "from_yaml", side_effect=AssertionError("disk read attempted")):
+            context = build_experiment_runtime_context(settings_provider=provider, synesthetic_config=injected)
+
+        assert_that(context.synesthetic_config).is_same_as(injected)
+
+    def test_should_build_with_default_provider_when_none_supplied(self):
+        injected = _in_memory_config()
+
+        context = build_experiment_runtime_context(synesthetic_config=injected)
+
+        assert_that(context.synesthetic_config).is_same_as(injected)
+
+    def test_should_expose_default_artifact_paths_when_context_is_built(self):
+        provider = ApplicationSettingProvider()
+        injected = _in_memory_config()
+
+        context = build_experiment_runtime_context(settings_provider=provider, synesthetic_config=injected)
+
+        assert_that(context.artifact_paths).is_equal_to(ArtifactPaths())
+
+    def test_should_use_overridden_artifact_paths_when_provided(self):
+        provider = ApplicationSettingProvider()
+        injected = _in_memory_config()
+        custom_paths = ArtifactPaths(model_path="custom/model.pth")
+
+        context = build_experiment_runtime_context(
+            settings_provider=provider, synesthetic_config=injected, artifact_paths=custom_paths
+        )
+
+        assert_that(context.artifact_paths).is_same_as(custom_paths)
+
+    def test_should_raise_when_experiment_config_path_is_missing(self, tmp_path):
+        missing = tmp_path / "absent.yaml"
+        provider = ApplicationSettingProvider()
+        provider.override("experiment_config", str(missing))
+
+        with pytest.raises(ExperimentConfigurationError) as error:
+            build_experiment_runtime_context(settings_provider=provider)
+
+        assert_that(str(error.value)).contains(str(missing))
+
+    def test_should_return_runtime_context_instance_when_built(self):
+        injected = _in_memory_config()
+
+        context = build_experiment_runtime_context(synesthetic_config=injected)
+
+        assert_that(context).is_instance_of(ExperimentRuntimeContext)
