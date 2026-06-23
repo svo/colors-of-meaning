@@ -22,3 +22,7 @@ class PaletteMatchDTO(BaseModel):
 class PaletteQueryResponseDTO(BaseModel):
     matches: List[PaletteMatchDTO]
     query_colors: int
+
+
+class QueryUnavailableDTO(BaseModel):
+    detail: str

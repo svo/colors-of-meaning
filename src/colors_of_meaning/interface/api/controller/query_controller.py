@@ -11,6 +11,7 @@ from colors_of_meaning.interface.api.data_transfer_object.palette_query_dto impo
     PaletteQueryRequestDTO,
     PaletteQueryResponseDTO,
     PaletteMatchDTO,
+    QueryUnavailableDTO,
 )
 
 
@@ -43,6 +44,25 @@ def create_query_controller(
         summary="Query documents by color palette",
         description="Find documents matching a specified color distribution",
         status_code=status.HTTP_200_OK,
+    )
+
+    return router
+
+
+def create_unavailable_query_controller(detail: str) -> APIRouter:
+    router = APIRouter(tags=["query"])
+
+    async def query_by_palette_unavailable(request: PaletteQueryRequestDTO) -> QueryUnavailableDTO:
+        return QueryUnavailableDTO(detail=detail)
+
+    router.add_api_route(
+        "/query/palette",
+        query_by_palette_unavailable,
+        methods=["POST"],
+        summary="Query documents by color palette",
+        description="Color retrieval is unavailable until the encoded corpus artifact is provisioned",
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        response_model=QueryUnavailableDTO,
     )
 
     return router

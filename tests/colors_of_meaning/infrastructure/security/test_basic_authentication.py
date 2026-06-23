@@ -122,6 +122,11 @@ class TestSecurityDependency:
     def client(self, application):
         return TestClient(application)
 
+    def test_should_return_require_authentication_when_dependency_requested(self, security_dependency):
+        dependency = security_dependency.authentication_dependency()
+
+        assert_that(dependency).is_equal_to(security_dependency.require_authentication)
+
     def test_should_access_unprotected_route(self, client):
         response = client.get("/unprotected")
 

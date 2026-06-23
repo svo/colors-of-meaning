@@ -2,14 +2,59 @@ import sys
 import os
 import json
 
+import numpy as np
 from assertpy import assert_that
 from fastapi.openapi.utils import get_openapi
-from unittest.mock import patch, Mock
+from fastapi.testclient import TestClient
+from unittest.mock import patch, Mock, mock_open
 
-from colors_of_meaning.interface.api.main import app, get_container, global_container, get_global_container, main, run
+import colors_of_meaning.interface.api.main as main_module
+from colors_of_meaning.interface.api.main import (
+    app,
+    get_container,
+    global_container,
+    get_global_container,
+    create_app,
+    main,
+    run,
+)
+from colors_of_meaning.application.use_case.compare_documents_use_case import CompareDocumentsUseCase
+from colors_of_meaning.application.use_case.query_by_palette_use_case import QueryByPaletteUseCase
+from colors_of_meaning.domain.model.color_codebook import ColorCodebook
+from colors_of_meaning.domain.model.colored_document import ColoredDocument
+from colors_of_meaning.domain.service.distance_calculator import DistanceCalculator
+from colors_of_meaning.infrastructure.ml.jensen_shannon_distance_calculator import JensenShannonDistanceCalculator
+from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import WassersteinDistanceCalculator
+from colors_of_meaning.interface.api.data_transfer_object.palette_query_dto import (
+    PaletteQueryResponseDTO,
+    QueryUnavailableDTO,
+)
 
 OPENAPI_JSON_FILE_PATH = "build/openapi.json"
 OPENAPI_JSON_FILE_PATH_OPEN_FLAG = "w"
+
+VALID_PALETTE_REQUEST = {"colors": [{"l": 50, "a": 0, "b": 0, "weight": 1.0}], "k": 5}
+EMPTY_PALETTE_REQUEST = {"colors": [], "k": 5}
+
+
+def _tiny_codebook() -> ColorCodebook:
+    return ColorCodebook.create_uniform_grid(bins_per_dimension=2)
+
+
+def _tiny_corpus() -> list:
+    return [
+        ColoredDocument(histogram=np.ones(8, dtype=np.float64) / 8, document_id="doc_a"),
+        ColoredDocument(
+            histogram=np.array([0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float64),
+            document_id="doc_b",
+        ),
+    ]
+
+
+def _build_query_client(corpus: list) -> TestClient:
+    with patch.object(main_module, "_load_query_codebook", return_value=_tiny_codebook()):
+        with patch.object(main_module, "_load_corpus", return_value=corpus):
+            return TestClient(create_app())
 
 
 def create_openapi_json(app):
@@ -54,19 +99,20 @@ class TestMainApp:
     def test_should_have_global_container(self):
         assert_that(global_container).is_not_none()
 
-    def test_should_have_create_coconut_route(self):
-        openapi_schema = app.openapi()
+    def test_should_expose_query_palette_route_when_app_is_built(self):
+        paths = app.openapi().get("paths", {})
 
-        paths = openapi_schema.get("paths", {})
+        assert_that(paths.get("/query/palette", {})).contains("post")
 
-        assert_that(paths.get("/coconut/", {})).contains("post")
+    def test_should_not_expose_create_coconut_route_when_app_is_built(self):
+        paths = app.openapi().get("paths", {})
 
-    def test_should_have_get_coconut_by_id_route(self):
-        openapi_schema = app.openapi()
+        assert_that(paths).does_not_contain_key("/coconut/")
 
-        paths = openapi_schema.get("paths", {})
+    def test_should_not_expose_get_coconut_route_when_app_is_built(self):
+        paths = app.openapi().get("paths", {})
 
-        assert_that(paths.get("/coconut/{id}", {})).contains("get")
+        assert_that(paths).does_not_contain_key("/coconut/{id}")
 
     def test_should_get_global_container(self):
         container = get_global_container()
@@ -97,3 +143,108 @@ class TestMainApp:
             run()
 
             mock_main.assert_called_once_with(["arg1", "arg2"])
+
+
+class TestQueryContainerWiring:
+    @patch("colors_of_meaning.interface.api.main._load_query_codebook")
+    def test_should_resolve_color_codebook_when_container_built(self, mock_load):
+        mock_load.return_value = _tiny_codebook()
+
+        container = get_container()
+
+        assert_that(container[ColorCodebook]).is_instance_of(ColorCodebook)
+
+    @patch("colors_of_meaning.interface.api.main._load_query_codebook")
+    def test_should_resolve_distance_calculator_when_container_built(self, mock_load):
+        mock_load.return_value = _tiny_codebook()
+
+        container = get_container()
+
+        assert_that(container[DistanceCalculator]).is_instance_of(DistanceCalculator)
+
+    @patch("colors_of_meaning.interface.api.main._load_query_codebook")
+    def test_should_resolve_compare_documents_use_case_when_container_built(self, mock_load):
+        mock_load.return_value = _tiny_codebook()
+
+        container = get_container()
+
+        assert_that(container[CompareDocumentsUseCase]).is_instance_of(CompareDocumentsUseCase)
+
+    @patch("colors_of_meaning.interface.api.main._load_query_codebook")
+    def test_should_resolve_query_by_palette_use_case_when_container_built(self, mock_load):
+        mock_load.return_value = _tiny_codebook()
+
+        container = get_container()
+
+        assert_that(container[QueryByPaletteUseCase]).is_instance_of(QueryByPaletteUseCase)
+
+
+class TestQueryArtifactLoaders:
+    @patch("colors_of_meaning.interface.api.main.FileColorCodebookRepository.load")
+    def test_should_load_codebook_when_artifact_present(self, mock_load):
+        expected = _tiny_codebook()
+        mock_load.return_value = expected
+
+        assert_that(main_module._load_query_codebook()).is_same_as(expected)
+
+    @patch("colors_of_meaning.interface.api.main.FileColorCodebookRepository.load")
+    def test_should_fall_back_to_uniform_grid_when_codebook_artifact_absent(self, mock_load):
+        mock_load.return_value = None
+
+        codebook = main_module._load_query_codebook()
+
+        assert_that(codebook.num_bins).is_equal_to(main_module.FALLBACK_BINS_PER_DIMENSION**3)
+
+    def test_should_load_corpus_when_artifact_present(self):
+        corpus = _tiny_corpus()
+
+        with patch("builtins.open", mock_open(read_data=b"")):
+            with patch.object(main_module.pickle, "load", return_value=corpus):
+                loaded = main_module._load_corpus()
+
+        assert_that(loaded).is_length(2)
+
+    def test_should_return_none_when_corpus_artifact_absent(self, tmp_path):
+        missing = tmp_path / "absent.pkl"
+
+        with patch.object(main_module, "CORPUS_ARTIFACT_PATH", str(missing)):
+            loaded = main_module._load_corpus()
+
+        assert_that(loaded).is_none()
+
+
+class TestDistanceCalculatorSelection:
+    def test_should_select_wasserstein_when_metric_is_wasserstein(self):
+        calculator = main_module._select_distance_calculator("wasserstein", _tiny_codebook())
+
+        assert_that(calculator).is_instance_of(WassersteinDistanceCalculator)
+
+    def test_should_select_jensen_shannon_when_metric_is_not_wasserstein(self):
+        calculator = main_module._select_distance_calculator("jensen_shannon", _tiny_codebook())
+
+        assert_that(calculator).is_instance_of(JensenShannonDistanceCalculator)
+
+
+class TestQueryApiContract:
+    def test_should_return_palette_query_response_when_palette_posted(self):
+        client = _build_query_client(_tiny_corpus())
+
+        response = client.post("/query/palette", json=VALID_PALETTE_REQUEST)
+
+        assert response.status_code == 200
+        assert PaletteQueryResponseDTO.model_validate(response.json())
+
+    def test_should_return_422_when_colors_is_empty(self):
+        client = _build_query_client(_tiny_corpus())
+
+        response = client.post("/query/palette", json=EMPTY_PALETTE_REQUEST)
+
+        assert response.status_code == 422
+
+    def test_should_return_503_when_corpus_artifact_unavailable(self):
+        client = _build_query_client(None)
+
+        response = client.post("/query/palette", json=VALID_PALETTE_REQUEST)
+
+        assert response.status_code == 503
+        assert QueryUnavailableDTO.model_validate(response.json())
