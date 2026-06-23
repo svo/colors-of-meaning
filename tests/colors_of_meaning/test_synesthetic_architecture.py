@@ -53,6 +53,7 @@ def test_should_use_application_use_case_in_cli() -> None:
             "colors_of_meaning.interface.cli.compare",
             "colors_of_meaning.interface.cli.compress",
             "colors_of_meaning.interface.cli.query",
+            "colors_of_meaning.interface.cli.ablate",
         )
         .should_import("colors_of_meaning.application.use_case.*")
         .check("colors_of_meaning")
@@ -114,6 +115,18 @@ def test_should_confine_structure_preservation_evaluator_scipy_to_infrastructure
         )
         .match("colors_of_meaning.infrastructure.evaluation.structure_preservation_evaluator")
         .should_import("scipy.stats")
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_confine_cosine_histogram_calculator_scipy_to_infrastructure() -> None:
+    (
+        archrule(
+            "Cosine Histogram Calculator Infrastructure",
+            comment="The scipy-backed cosine histogram distance calculator lives in infrastructure and may depend on scipy",
+        )
+        .match("colors_of_meaning.infrastructure.ml.cosine_histogram_distance_calculator")
+        .should_import("scipy.spatial.distance")
         .check("colors_of_meaning")
     )
 
