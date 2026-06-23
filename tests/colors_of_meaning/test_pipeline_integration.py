@@ -110,47 +110,44 @@ class TestEncodePipeline:
 
 @pytest.mark.integration
 class TestEncodeCompressPipeline:
-    def test_should_compress_encoded_document(
-        self,
-        encode_use_case: EncodeDocumentUseCase,
-        synthetic_embeddings: np.ndarray,
-    ) -> None:
-        document = encode_use_case.execute(synthetic_embeddings, document_id="doc_0")
-        compress_use_case = CompressDocumentUseCase()
-
-        result = compress_use_case.execute(document)
-
-        assert "compression_ratio" in result
-
     def test_should_report_positive_compression_ratio(
         self,
-        encode_use_case: EncodeDocumentUseCase,
+        quantized_mapper: QuantizedColorMapper,
+        small_codebook: ColorCodebook,
         synthetic_embeddings: np.ndarray,
     ) -> None:
-        document = encode_use_case.execute(synthetic_embeddings, document_id="doc_0")
-        compress_use_case = CompressDocumentUseCase()
+        colors = quantized_mapper.color_mapper.embed_batch_to_lab(synthetic_embeddings)
+        compress_use_case = CompressDocumentUseCase(small_codebook)
 
-        result = compress_use_case.execute(document)
+        result = compress_use_case.execute(colors)
 
-        assert result["compression_ratio"] > 0
+        assert result.compression_ratio > 0
 
-    def test_should_compress_batch_of_documents(
+    def test_should_report_reconstruction_error_for_continuous_colors(
         self,
-        encode_use_case: EncodeDocumentUseCase,
+        quantized_mapper: QuantizedColorMapper,
+        small_codebook: ColorCodebook,
+        synthetic_embeddings: np.ndarray,
+    ) -> None:
+        colors = quantized_mapper.color_mapper.embed_batch_to_lab(synthetic_embeddings)
+        compress_use_case = CompressDocumentUseCase(small_codebook)
+
+        result = compress_use_case.execute(colors)
+
+        assert result.reconstruction_error is not None
+
+    def test_should_compute_original_size_from_compressed_colors(
+        self,
+        quantized_mapper: QuantizedColorMapper,
+        small_codebook: ColorCodebook,
     ) -> None:
         rng = np.random.default_rng(42)
-        documents = [
-            encode_use_case.execute(
-                rng.standard_normal((5, 8)).astype(np.float32),
-                document_id=f"doc_{i}",
-            )
-            for i in range(3)
-        ]
-        compress_use_case = CompressDocumentUseCase()
+        colors = quantized_mapper.color_mapper.embed_batch_to_lab(rng.standard_normal((20, 8)).astype(np.float32))
+        compress_use_case = CompressDocumentUseCase(small_codebook)
 
-        result = compress_use_case.execute_batch(documents)
+        result = compress_use_case.execute(colors)
 
-        assert result["total_tokens"] > 0
+        assert result.original_size_bits == 20 * 3 * 32
 
 
 @pytest.mark.integration
@@ -271,6 +268,7 @@ class TestFullPipeline:
     def test_should_encode_compress_and_compare(
         self,
         encode_use_case: EncodeDocumentUseCase,
+        quantized_mapper: QuantizedColorMapper,
         small_codebook: ColorCodebook,
     ) -> None:
         rng = np.random.default_rng(42)
@@ -282,11 +280,11 @@ class TestFullPipeline:
             for i in range(3)
         ]
 
-        compress_use_case = CompressDocumentUseCase()
-        batch_stats = compress_use_case.execute_batch(documents)
+        colors = quantized_mapper.color_mapper.embed_batch_to_lab(rng.standard_normal((5, 8)).astype(np.float32))
+        compressed = CompressDocumentUseCase(small_codebook).execute(colors)
 
         compare_use_case = CompareDocumentsUseCase(WassersteinDistanceCalculator(codebook=small_codebook))
         pairs = compare_use_case.execute_pairwise(documents)
 
-        assert batch_stats["total_tokens"] > 0
+        assert compressed.compression_ratio > 0
         assert len(pairs) == 3

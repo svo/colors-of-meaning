@@ -196,39 +196,23 @@ class TestCompareDocumentsContract:
 
 
 class TestCompressDocumentContract:
-    def test_should_return_dict_with_required_keys(self) -> None:
-        document = ColoredDocument.from_color_sequence([0, 1, 2, 1, 0], num_bins=4, document_id="doc")
-        use_case = CompressDocumentUseCase()
+    def test_should_return_compressed_result_when_compressing_colors(self) -> None:
+        colors = [
+            LabColor(l=10.0, a=0.0, b=0.0),
+            LabColor(l=50.0, a=20.0, b=-20.0),
+            LabColor(l=90.0, a=-30.0, b=40.0),
+        ]
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=2))
 
-        result = use_case.execute(document)
+        result = use_case.execute(colors)
 
-        required_keys = {
-            "palette_bits",
-            "rle_bits",
-            "total_bits",
-            "num_tokens",
-            "bits_per_token",
-            "compression_ratio",
-        }
-        assert required_keys.issubset(result.keys())
+        assert isinstance(result, CompressedResult)
 
-    def test_should_reject_document_without_color_sequence(self) -> None:
-        histogram = np.array([0.5, 0.5, 0.0, 0.0])
-        document = ColoredDocument(histogram=histogram)
-        use_case = CompressDocumentUseCase()
+    def test_should_reject_empty_colors(self) -> None:
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=2))
 
-        with pytest.raises(ValueError, match="color_sequence"):
-            use_case.execute(document)
-
-    def test_batch_should_return_aggregated_stats(self) -> None:
-        documents = [ColoredDocument.from_color_sequence([0, 1, 2], num_bins=4, document_id=f"d{i}") for i in range(3)]
-        use_case = CompressDocumentUseCase()
-
-        result = use_case.execute_batch(documents)
-
-        assert "total_bits" in result
-        assert "total_tokens" in result
-        assert "average_bits_per_token" in result
+        with pytest.raises(ValueError, match="colors must not be empty"):
+            use_case.execute([])
 
 
 class TestTrainColorMappingContract:

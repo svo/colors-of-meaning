@@ -49,14 +49,6 @@ class TestCompressedResult:
 
         assert result.reconstruction_error is None
 
-    def test_should_return_zero_bits_per_dimension(self) -> None:
-        result = CompressedResult(
-            compressed_size_bits=100,
-            original_size_bits=1000,
-        )
-
-        assert result.bits_per_dimension == 0.0
-
 
 class TestCompressionBaselineAbstract:
     def test_should_be_abstract(self) -> None:

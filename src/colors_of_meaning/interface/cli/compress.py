@@ -1,16 +1,16 @@
 import tyro
-import pickle  # nosec B403
 from dataclasses import dataclass
-from typing import List
 
 import numpy as np
 
-from colors_of_meaning.domain.model.colored_document import ColoredDocument
-from colors_of_meaning.application.use_case.compress_document_use_case import (
-    CompressDocumentUseCase,
-)
+from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
+from colors_of_meaning.domain.model.color_codebook import ColorCodebook
 from colors_of_meaning.application.use_case.compression_comparison_use_case import (
     CompressionComparisonUseCase,
+)
+from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import PyTorchColorMapper
+from colors_of_meaning.infrastructure.persistence.file_color_codebook_repository import (
+    FileColorCodebookRepository,
 )
 from colors_of_meaning.infrastructure.ml.gzip_compression_baseline import (
     GzipCompressionBaseline,
@@ -18,72 +18,116 @@ from colors_of_meaning.infrastructure.ml.gzip_compression_baseline import (
 from colors_of_meaning.infrastructure.ml.pq_compression_baseline import (
     PQCompressionBaseline,
 )
+from colors_of_meaning.infrastructure.ml.color_vq_compression_baseline import (
+    ColorVqCompressionBaseline,
+)
+
+DELTA_E_METHOD = "color_vq"
 
 
 @dataclass
 class CompressArgs:
     config: str = "configs/base.yaml"
-    encoded_documents: str = "artifacts/encoded/test_documents.pkl"
-    method: str = "vq"
-    compare_baselines: bool = False
     embeddings_path: str = "artifacts/encoded/test_embeddings.npy"
+    model_path: str = "artifacts/models/projector.pth"
+    codebook_name: str = "codebook_4096"
+    compare_baselines: bool = False
+
+
+def _load_codebook(codebook_name: str) -> ColorCodebook:
+    codebook = FileColorCodebookRepository().load(codebook_name)
+    if codebook is None:
+        raise ValueError(f"Codebook {codebook_name} not found")
+    return codebook
+
+
+def _setup_color_mapper(config: SynestheticConfig, model_path: str) -> PyTorchColorMapper:
+    color_mapper = PyTorchColorMapper(
+        input_dim=config.projector.embedding_dim,
+        hidden_dim_1=config.projector.hidden_dim_1,
+        hidden_dim_2=config.projector.hidden_dim_2,
+        device=config.training.device,
+    )
+    color_mapper.load_weights(model_path)
+    return color_mapper
+
+
+def _build_color_vq_baseline(
+    config: SynestheticConfig, args: CompressArgs, codebook: ColorCodebook
+) -> ColorVqCompressionBaseline:
+    color_mapper = _setup_color_mapper(config, args.model_path)
+    return ColorVqCompressionBaseline(codebook=codebook, color_mapper=color_mapper)
+
+
+def _distortion_unit(method: str) -> str:
+    return "ΔE" if method == DELTA_E_METHOD else "MSE"
+
+
+def _original_basis(method: str) -> str:
+    return "Lab-triple" if method == DELTA_E_METHOD else "embedding"
 
 
 def _run_vq_analysis(args: CompressArgs) -> None:
-    print(f"Loading encoded documents from {args.encoded_documents}...")
-    with open(args.encoded_documents, "rb") as f:
-        documents: List[ColoredDocument] = pickle.load(f)  # nosec B301 nosemgrep
+    config = SynestheticConfig.from_yaml(args.config)
+    codebook = _load_codebook(args.codebook_name)
+    baseline = _build_color_vq_baseline(config, args, codebook)
 
-    use_case = CompressDocumentUseCase()
-
-    print(f"\nAnalyzing compression for {len(documents)} documents...")
-    batch_results = use_case.execute_batch(documents)
+    print(f"Loading embeddings from {args.embeddings_path}...")
+    embeddings = np.load(args.embeddings_path)
+    result = baseline.compress(embeddings)
 
     print("\n" + "=" * 60)
-    print("COMPRESSION ANALYSIS")
+    print("COLOR-VQ COMPRESSION")
     print("=" * 60)
-    print(f"Total bits: {batch_results['total_bits']:,}")
-    print(f"Total tokens: {batch_results['total_tokens']:,}")
-    print(f"Average bits per token: {batch_results['average_bits_per_token']:.2f}")
+    print(f"Original size (bits): {result.original_size_bits:,}")
+    print(f"Compressed size (bits): {result.compressed_size_bits:,}")
+    print(f"Compression ratio: {result.compression_ratio:.2f}x")
+    print(f"Reconstruction error (ΔE): {result.reconstruction_error:.4f}")
+    print(
+        f"Shared palette overhead (one-time, excluded from rate): {baseline.codec.shared_palette_overhead_bits():,} bits"
+    )
     print("=" * 60)
-
-    print("\nSample individual results:")
-    for i, result in enumerate(batch_results["individual_results"][:5]):
-        print(f"\nDocument {i}:")
-        print(f"  Tokens: {result['num_tokens']}")
-        print(f"  Total bits: {result['total_bits']}")
-        print(f"  Bits per token: {result['bits_per_token']:.2f}")
-        print(f"  Compression ratio: {result['compression_ratio']:.2f}x")
 
 
 def _run_baseline_comparison(args: CompressArgs) -> None:
+    config = SynestheticConfig.from_yaml(args.config)
+    codebook = _load_codebook(args.codebook_name)
+
     print(f"Loading embeddings from {args.embeddings_path}...")
     embeddings = np.load(args.embeddings_path)
 
     baselines = [
         GzipCompressionBaseline(),
-        PQCompressionBaseline(num_subspaces=48, num_centroids=256),
+        PQCompressionBaseline(num_subspaces=48, num_centroids=256, seed=config.training.seed),
+        _build_color_vq_baseline(config, args, codebook),
     ]
 
-    use_case = CompressionComparisonUseCase(baselines=baselines)
-    results = use_case.execute(embeddings)
+    results = CompressionComparisonUseCase(baselines=baselines).execute(embeddings)
 
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 84)
     print("COMPRESSION BASELINE COMPARISON")
-    print("=" * 70)
-    print(f"{'Method':<25} {'Ratio':>10} {'Bits/Token':>12} {'MSE':>12}")
-    print("-" * 70)
+    print("=" * 84)
+    print(f"{'Method':<22} {'Compresses':>12} {'Ratio':>9} {'Bits/Token':>11} {'Distortion':>13} {'Unit':>5}")
+    print("-" * 84)
 
     for result in results:
-        mse_str = f"{result['reconstruction_error']:.6f}" if result["reconstruction_error"] is not None else "N/A"
+        method = str(result["method"])
+        distortion = result["reconstruction_error"]
+        distortion_str = f"{distortion:.6f}" if distortion is not None else "N/A"
         print(
-            f"{result['method']:<25} "
-            f"{result['compression_ratio']:>10.2f}x "
-            f"{result['bits_per_token']:>12.2f} "
-            f"{mse_str:>12}"
+            f"{method:<22} "
+            f"{_original_basis(method):>12} "
+            f"{result['compression_ratio']:>9.2f}x "
+            f"{result['bits_per_token']:>11.2f} "
+            f"{distortion_str:>13} "
+            f"{_distortion_unit(method):>5}"
         )
 
-    print("=" * 70)
+    print("=" * 84)
+    print("Originals differ: gzip/PQ compress the high-dim embedding; color_vq compresses the 3-float Lab color")
+    print(
+        "(after the projector's lossy map). PQ and color_vq exclude their shared trained codebook; gzip is self-contained."
+    )
 
 
 def main(args: CompressArgs) -> None:

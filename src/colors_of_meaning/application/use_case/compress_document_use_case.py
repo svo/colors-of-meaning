@@ -1,72 +1,66 @@
+import logging
 import math
+import uuid
 from typing import List
 
-from colors_of_meaning.domain.model.colored_document import ColoredDocument
+from colors_of_meaning.domain.model.color_codebook import ColorCodebook
+from colors_of_meaning.domain.model.lab_color import LabColor
+from colors_of_meaning.domain.service.compression_baseline import CompressedResult
+from colors_of_meaning.shared.lab_utils import delta_e
+
+logger = logging.getLogger(__name__)
+
+FLOAT_COMPONENT_BITS = 32
+LAB_COMPONENTS = 3
 
 
 class CompressDocumentUseCase:
-    def execute(self, document: ColoredDocument) -> dict:
-        if document.color_sequence is None:
-            raise ValueError("Document must have color_sequence for compression")
+    def __init__(self, codebook: ColorCodebook) -> None:
+        self.codebook = codebook
 
-        palette_bits = self._compute_palette_bits(document.num_bins)
-        rle_bits = self._compute_rle_bits(document.color_sequence)
-        total_bits = palette_bits + rle_bits
-        bits_per_token = total_bits / len(document.color_sequence)
+    def execute(self, colors: List[LabColor]) -> CompressedResult:
+        if not colors:
+            raise ValueError("colors must not be empty for compression")
 
-        return {
-            "palette_bits": palette_bits,
-            "rle_bits": rle_bits,
-            "total_bits": total_bits,
-            "num_tokens": len(document.color_sequence),
-            "bits_per_token": bits_per_token,
-            "compression_ratio": self._compute_compression_ratio(total_bits, len(document.color_sequence)),
-        }
+        num_colors = len(colors)
+        result = CompressedResult(
+            compressed_size_bits=self._compressed_size_bits(num_colors),
+            original_size_bits=self._original_size_bits(num_colors),
+            reconstruction_error=self._mean_delta_e(colors),
+        )
+        self._log_run(num_colors, result)
+        return result
 
-    def execute_batch(self, documents: List[ColoredDocument]) -> dict:
-        individual_results = [self.execute(doc) for doc in documents]
+    def shared_palette_overhead_bits(self) -> int:
+        return self.codebook.num_bins * LAB_COMPONENTS * FLOAT_COMPONENT_BITS
 
-        total_bits = sum(r["total_bits"] for r in individual_results)
-        total_tokens = sum(r["num_tokens"] for r in individual_results)
+    def _mean_delta_e(self, colors: List[LabColor]) -> float:
+        total_delta_e = sum(delta_e(color, self._dequantize(color)) for color in colors)
+        return total_delta_e / len(colors)
 
-        return {
-            "total_bits": total_bits,
-            "total_tokens": total_tokens,
-            "average_bits_per_token": total_bits / total_tokens if total_tokens > 0 else 0,
-            "individual_results": individual_results,
-        }
+    def _dequantize(self, color: LabColor) -> LabColor:
+        return self.codebook.get_color(self.codebook.quantize(color))
 
-    @staticmethod
-    def _compute_palette_bits(num_bins: int) -> int:
-        return int(math.ceil(math.log2(num_bins)))
+    def _compressed_size_bits(self, num_colors: int) -> int:
+        return num_colors * self._code_bits()
+
+    def _code_bits(self) -> int:
+        return int(math.ceil(math.log2(self.codebook.num_bins)))
 
     @staticmethod
-    def _compute_rle_bits(color_sequence: List[int]) -> int:
-        runs = []
-        current_color = color_sequence[0]
-        current_length = 1
+    def _original_size_bits(num_colors: int) -> int:
+        return num_colors * LAB_COMPONENTS * FLOAT_COMPONENT_BITS
 
-        for color in color_sequence[1:]:
-            if color == current_color:
-                current_length += 1
-            else:
-                runs.append((current_color, current_length))
-                current_color = color
-                current_length = 1
-
-        runs.append((current_color, current_length))
-
-        total_bits = 0
-        max_run_length = max(length for _, length in runs)
-        run_length_bits = int(math.ceil(math.log2(max_run_length + 1)))
-
-        for color, _length in runs:
-            total_bits += int(math.ceil(math.log2(max(color, 1) + 1)))
-            total_bits += run_length_bits
-
-        return total_bits
-
-    @staticmethod
-    def _compute_compression_ratio(total_bits: int, num_tokens: int) -> float:
-        original_bits = num_tokens * 8 * 10
-        return original_bits / total_bits if total_bits > 0 else 0.0
+    def _log_run(self, num_colors: int, result: CompressedResult) -> None:
+        logger.info(
+            "Compressed color sequence with color-VQ codec",
+            extra={
+                "correlation_id": str(uuid.uuid4()),
+                "num_colors": num_colors,
+                "compressed_size_bits": result.compressed_size_bits,
+                "original_size_bits": result.original_size_bits,
+                "compression_ratio": result.compression_ratio,
+                "reconstruction_error": result.reconstruction_error,
+                "shared_palette_overhead_bits": self.shared_palette_overhead_bits(),
+            },
+        )

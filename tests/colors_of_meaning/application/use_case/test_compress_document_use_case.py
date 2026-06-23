@@ -1,102 +1,96 @@
+import logging
+from typing import List
+
 import numpy as np
 import pytest
-from typing import Dict, Any
 
-from colors_of_meaning.application.use_case.compress_document_use_case import CompressDocumentUseCase
-from colors_of_meaning.domain.model.colored_document import ColoredDocument
-
-
-def _assert_compression_keys(result: Dict[str, Any]) -> None:
-    """Helper to assert compression result has all required keys."""
-    assert "palette_bits" in result
-    assert "rle_bits" in result
-    assert "total_bits" in result
+from colors_of_meaning.application.use_case.compress_document_use_case import (
+    CompressDocumentUseCase,
+)
+from colors_of_meaning.domain.model.color_codebook import ColorCodebook
+from colors_of_meaning.domain.model.lab_color import LabColor
 
 
-def _assert_compression_metrics(result: Dict[str, Any]) -> None:
-    """Helper to assert compression metric values."""
-    assert "num_tokens" in result
-    assert "bits_per_token" in result
-    assert "compression_ratio" in result
+def _sample_lab_colors(count: int, seed: int = 0) -> List[LabColor]:
+    rng = np.random.default_rng(seed)
+    return [
+        LabColor(
+            l=float(rng.uniform(0, 100)),
+            a=float(rng.uniform(-128, 127)),
+            b=float(rng.uniform(-128, 127)),
+        )
+        for _ in range(count)
+    ]
 
 
-def _assert_compression_values(result: Dict[str, Any]) -> None:
-    """Helper to assert compression result values are valid."""
-    assert result["num_tokens"] == 6
-    assert result["total_bits"] > 0
-
-
-def _assert_batch_compression_keys(result: Dict[str, Any]) -> None:
-    """Helper to assert batch compression result keys."""
-    assert "total_bits" in result
-    assert "total_tokens" in result
-
-
-def _assert_batch_compression_values(result: Dict[str, Any]) -> None:
-    """Helper to assert batch compression values."""
-    assert "average_bits_per_token" in result
-    assert "individual_results" in result
-    assert result["total_tokens"] == 6
-    assert len(result["individual_results"]) == 2
+def _codebook_from_colors(colors: List[LabColor]) -> ColorCodebook:
+    return ColorCodebook(colors=colors, num_bins=len(colors))
 
 
 class TestCompressDocumentUseCase:
-    def test_should_compute_compression_metrics(self) -> None:
-        use_case = CompressDocumentUseCase()
-        color_sequence = [0, 0, 1, 1, 1, 2]
-        histogram = np.array([0.33, 0.5, 0.17], dtype=np.float64)
-        doc = ColoredDocument(histogram=histogram, color_sequence=color_sequence)
+    def test_should_return_zero_reconstruction_error_when_every_color_is_a_codebook_centroid(self) -> None:
+        centroids = [
+            LabColor(l=10.0, a=0.0, b=0.0),
+            LabColor(l=50.0, a=20.0, b=-20.0),
+            LabColor(l=90.0, a=-30.0, b=40.0),
+            LabColor(l=30.0, a=10.0, b=10.0),
+        ]
+        use_case = CompressDocumentUseCase(_codebook_from_colors(centroids))
 
-        result = use_case.execute(doc)
+        result = use_case.execute(centroids)
 
-        _assert_compression_keys(result)
-        _assert_compression_metrics(result)
-        _assert_compression_values(result)
+        assert result.reconstruction_error == 0.0
 
-    def test_should_raise_error_when_no_color_sequence(self) -> None:
-        use_case = CompressDocumentUseCase()
-        doc = ColoredDocument(histogram=np.array([0.5, 0.5], dtype=np.float64))
+    def test_should_increase_reconstruction_error_when_codebook_is_coarser(self) -> None:
+        colors = _sample_lab_colors(count=20, seed=7)
+        fine_use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=8))
+        coarse_use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=2))
 
-        with pytest.raises(ValueError, match="Document must have color_sequence"):
-            use_case.execute(doc)
+        fine_error = fine_use_case.execute(colors).reconstruction_error
+        coarse_error = coarse_use_case.execute(colors).reconstruction_error
 
-    def test_should_compute_batch_compression(self) -> None:
-        use_case = CompressDocumentUseCase()
-        doc1 = ColoredDocument(histogram=np.array([0.5, 0.5], dtype=np.float64), color_sequence=[0, 1, 1])
-        doc2 = ColoredDocument(histogram=np.array([0.5, 0.5], dtype=np.float64), color_sequence=[0, 0, 1])
+        assert coarse_error >= fine_error
 
-        result = use_case.execute_batch([doc1, doc2])
+    def test_should_produce_compressed_size_smaller_than_original_against_production_codebook(self) -> None:
+        colors = _sample_lab_colors(count=50, seed=3)
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=16))
 
-        _assert_batch_compression_keys(result)
-        _assert_batch_compression_values(result)
+        result = use_case.execute(colors)
 
-    def test_should_handle_empty_batch_gracefully(self) -> None:
-        use_case = CompressDocumentUseCase()
+        assert result.compressed_size_bits < result.original_size_bits
 
-        result = use_case.execute_batch([])
+    def test_should_compute_compressed_size_from_code_bits_excluding_shared_palette(self) -> None:
+        colors = _sample_lab_colors(count=10, seed=8)
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=16))
 
-        assert result["total_bits"] == 0
-        assert result["total_tokens"] == 0
-        assert result["average_bits_per_token"] == 0
+        result = use_case.execute(colors)
 
-    def test_should_compute_palette_bits(self) -> None:
-        result = CompressDocumentUseCase._compute_palette_bits(256)
+        assert result.compressed_size_bits == 10 * 12
 
-        assert result == 8
+    def test_should_disclose_shared_palette_overhead_bits(self) -> None:
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=16))
 
-    def test_should_compute_rle_bits(self) -> None:
-        color_sequence = [0, 0, 0, 1, 1, 2]
+        assert use_case.shared_palette_overhead_bits() == 4096 * 3 * 32
 
-        result = CompressDocumentUseCase._compute_rle_bits(color_sequence)
+    def test_should_compute_original_size_from_color_triples_when_compressing(self) -> None:
+        colors = _sample_lab_colors(count=10, seed=1)
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=4))
 
-        assert result > 0
+        result = use_case.execute(colors)
 
-    def test_should_compute_compression_ratio(self) -> None:
-        result = CompressDocumentUseCase._compute_compression_ratio(100, 10)
+        assert result.original_size_bits == 10 * 3 * 32
 
-        assert result == 8.0
+    def test_should_raise_error_when_colors_are_empty(self) -> None:
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=2))
 
-    def test_should_handle_zero_bits_in_compression_ratio(self) -> None:
-        result = CompressDocumentUseCase._compute_compression_ratio(0, 10)
+        with pytest.raises(ValueError, match="colors must not be empty"):
+            use_case.execute([])
 
-        assert result == 0.0
+    def test_should_emit_one_summary_log_when_compressing(self, caplog: pytest.LogCaptureFixture) -> None:
+        colors = _sample_lab_colors(count=5, seed=2)
+        use_case = CompressDocumentUseCase(ColorCodebook.create_uniform_grid(bins_per_dimension=2))
+
+        with caplog.at_level(logging.INFO, logger="colors_of_meaning.application.use_case.compress_document_use_case"):
+            use_case.execute(colors)
+
+        assert len(caplog.records) == 1

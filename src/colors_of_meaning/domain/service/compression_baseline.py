@@ -17,10 +17,6 @@ class CompressedResult:
             return 0.0
         return self.original_size_bits / self.compressed_size_bits
 
-    @property
-    def bits_per_dimension(self) -> float:
-        return 0.0
-
 
 class CompressionBaseline(ABC):
     @abstractmethod

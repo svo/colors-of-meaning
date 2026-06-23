@@ -84,3 +84,19 @@ class TestCompressionComparisonUseCase:
         results = use_case.execute(embeddings)
 
         assert len(results) == 0
+
+    def test_should_report_reconstruction_error_for_color_vq_row(self) -> None:
+        mock_baseline = Mock()
+        mock_baseline.name.return_value = "color_vq"
+        mock_baseline.compress.return_value = CompressedResult(
+            compressed_size_bits=200,
+            original_size_bits=1000,
+            reconstruction_error=3.5,
+        )
+
+        use_case = CompressionComparisonUseCase(baselines=[mock_baseline])
+        embeddings = np.random.randn(10, 384).astype(np.float32)
+
+        results = use_case.execute(embeddings)
+
+        assert results[0]["reconstruction_error"] == 3.5
