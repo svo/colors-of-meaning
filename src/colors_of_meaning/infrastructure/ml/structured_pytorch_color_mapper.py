@@ -1,17 +1,28 @@
-from typing import Any, List
+from typing import Any, List, Optional, Sized
 import numpy as np
 import numpy.typing as npt
 import torch
 import torch.nn as nn
 from pathlib import Path
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
+from sklearn.decomposition import PCA  # type: ignore[import-untyped]
 
 from colors_of_meaning.domain.model.lab_color import LabColor
 from colors_of_meaning.domain.service.color_mapper import ColorMapper
+from colors_of_meaning.domain.service.concreteness_lexicon import ConcretenessLexicon
+from colors_of_meaning.infrastructure.ml.brysbaert_concreteness_lexicon import (
+    BrysbaertConcretenessLexicon,
+)
 from colors_of_meaning.infrastructure.ml.structured_lab_projector_network import (
     StructuredLabProjectorNetwork,
 )
 from colors_of_meaning.shared.determinism import seed_everything
+
+_NEUTRAL_LIGHTNESS = 50.0
+_MIN_SENTIMENT_LIGHTNESS = 20.0
+_MAX_SENTIMENT_LIGHTNESS = 80.0
+_MIN_CONCRETENESS = 1.0
+_MAX_CONCRETENESS = 5.0
 
 
 class StructuredPyTorchColorMapper(ColorMapper):
@@ -28,6 +39,7 @@ class StructuredPyTorchColorMapper(ColorMapper):
         num_clusters: int = 16,
         max_chroma: float = 128.0,
         seed: int = 42,
+        concreteness_lexicon: Optional[ConcretenessLexicon] = None,
     ) -> None:
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
         self.alpha = alpha
@@ -43,7 +55,25 @@ class StructuredPyTorchColorMapper(ColorMapper):
             dropout_rate=dropout_rate,
             max_chroma=max_chroma,
         ).to(self.device)
+        self._concreteness_lexicon = concreteness_lexicon or BrysbaertConcretenessLexicon()
+        self._sentiment_scores: Optional[npt.NDArray] = None
+        self._training_texts: Optional[List[str]] = None
         self._epoch_checkpoints: List[Any] = []
+
+    def set_sentiment_scores(self, scores: npt.NDArray) -> None:
+        self._sentiment_scores = np.asarray(scores, dtype=np.float32)
+
+    def set_training_texts(self, texts: List[str]) -> None:
+        self._training_texts = list(texts)
+
+    def _validate_side_information(self, sample_count: int) -> None:
+        self._validate_length(self._sentiment_scores, sample_count, "Sentiment scores")
+        self._validate_length(self._training_texts, sample_count, "Training texts")
+
+    @staticmethod
+    def _validate_length(side_information: Optional[Sized], sample_count: int, name: str) -> None:
+        if side_information is not None and len(side_information) != sample_count:
+            raise ValueError(f"{name} length must match the number of embeddings.")
 
     def embed_to_lab(self, embedding: npt.NDArray) -> LabColor:
         self.network.eval()
@@ -76,6 +106,7 @@ class StructuredPyTorchColorMapper(ColorMapper):
 
     def train(self, embeddings: npt.NDArray, epochs: int, learning_rate: float) -> None:
         self.network.train()
+        self._validate_side_information(len(embeddings))
 
         embeddings_tensor = torch.tensor(embeddings, dtype=torch.float32, device=self.device)
         targets = self._prepare_targets(embeddings)
@@ -226,35 +257,50 @@ class StructuredPyTorchColorMapper(ColorMapper):
         kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
         labels = kmeans.fit_predict(normalized)
 
+        ranks = self._order_clusters_by_centroid(kmeans.cluster_centers_)
         hue_angles = np.array(
-            [2.0 * np.pi * label / num_clusters for label in labels],
+            [2.0 * np.pi * ranks[label] / num_clusters for label in labels],
             dtype=np.float32,
         )
 
         return torch.tensor(hue_angles, dtype=torch.float32).unsqueeze(1)
 
-    def _derive_lightness_targets(self, embeddings: npt.NDArray) -> torch.Tensor:
-        mean_activations = np.mean(embeddings, axis=1)
-        min_val = mean_activations.min()
-        max_val = mean_activations.max()
-        range_val = max_val - min_val
+    def _order_clusters_by_centroid(self, centers: npt.NDArray) -> npt.NDArray:
+        if len(centers) == 1:
+            return np.zeros(1, dtype=np.int64)
 
-        if range_val < 1e-8:
-            scaled = np.full_like(mean_activations, 50.0)
+        projection = PCA(n_components=1, random_state=42).fit_transform(centers)[:, 0]
+        order = np.argsort(projection)
+        ranks = np.empty(len(order), dtype=np.int64)
+        ranks[order] = np.arange(len(order))
+        return ranks
+
+    def _derive_lightness_targets(self, embeddings: npt.NDArray) -> torch.Tensor:
+        if self._sentiment_scores is None:
+            scaled = np.full(len(embeddings), _NEUTRAL_LIGHTNESS, dtype=np.float32)
         else:
-            scaled = ((mean_activations - min_val) / range_val) * 100.0
+            scaled = self._sentiment_to_lightness(self._sentiment_scores)
 
         return torch.tensor(scaled, dtype=torch.float32).unsqueeze(1)
+
+    def _sentiment_to_lightness(self, scores: npt.NDArray) -> npt.NDArray:
+        polarity = np.clip(scores, 0.0, 1.0)
+        span = _MAX_SENTIMENT_LIGHTNESS - _MIN_SENTIMENT_LIGHTNESS
+        return np.asarray(_MIN_SENTIMENT_LIGHTNESS + polarity * span, dtype=np.float32)
 
     def _derive_chroma_targets(self, embeddings: npt.NDArray) -> torch.Tensor:
-        variances = np.var(embeddings, axis=1)
-        min_val = variances.min()
-        max_val = variances.max()
-        range_val = max_val - min_val
-
-        if range_val < 1e-8:
-            scaled = np.full_like(variances, self.max_chroma / 2.0)
+        if self._training_texts is None:
+            scaled = np.full(len(embeddings), self.max_chroma / 2.0, dtype=np.float32)
         else:
-            scaled = ((variances - min_val) / range_val) * self.max_chroma
+            concreteness = np.array(
+                [self._concreteness_lexicon.score(text) for text in self._training_texts],
+                dtype=np.float32,
+            )
+            scaled = self._concreteness_to_chroma(concreteness)
 
         return torch.tensor(scaled, dtype=torch.float32).unsqueeze(1)
+
+    def _concreteness_to_chroma(self, concreteness: npt.NDArray) -> npt.NDArray:
+        clamped = np.clip(concreteness, _MIN_CONCRETENESS, _MAX_CONCRETENESS)
+        normalized = (clamped - _MIN_CONCRETENESS) / (_MAX_CONCRETENESS - _MIN_CONCRETENESS)
+        return np.asarray(normalized * self.max_chroma, dtype=np.float32)

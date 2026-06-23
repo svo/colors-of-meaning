@@ -50,6 +50,8 @@ class StructuredMapperConfig:
     gamma: float = 1.0
     num_clusters: int = 16
     max_chroma: float = 128.0
+    sentiment_source: str = "none"
+    concreteness_resource: str = "concreteness_norms.tsv"
 
 
 @dataclass

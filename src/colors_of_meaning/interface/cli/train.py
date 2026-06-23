@@ -4,8 +4,9 @@ import numpy as np
 import numpy.typing as npt
 import tyro
 from dataclasses import dataclass
+from typing import Optional, cast
 
-from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
+from colors_of_meaning.shared.synesthetic_config import SynestheticConfig, StructuredMapperConfig
 from colors_of_meaning.shared.determinism import seed_everything
 from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter import (
     SentenceEmbeddingAdapter,
@@ -18,6 +19,9 @@ from colors_of_meaning.infrastructure.ml.learned_color_codebook_factory import (
 )
 from colors_of_meaning.infrastructure.ml.supervised_pytorch_color_mapper import (
     SupervisedPyTorchColorMapper,
+)
+from colors_of_meaning.infrastructure.ml.structured_pytorch_color_mapper import (
+    StructuredPyTorchColorMapper,
 )
 from colors_of_meaning.infrastructure.evaluation.structure_preservation_evaluator import (
     SpearmanStructurePreservationEvaluator,
@@ -40,6 +44,8 @@ from colors_of_meaning.infrastructure.dataset.newsgroups_dataset_adapter import 
 from colors_of_meaning.domain.repository.dataset_repository import DatasetRepository
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_SENTIMENT_SOURCES = {"labels", "none"}
 
 
 @dataclass
@@ -70,7 +76,26 @@ def _create_dataset_adapter(dataset_name: str) -> DatasetRepository:
 
 
 def _create_color_mapper(args: TrainArgs, config: SynestheticConfig) -> ColorMapper:
-    return create_color_mapper(args.mapper_type, config)
+    color_mapper = create_color_mapper(args.mapper_type, config)
+    if args.mapper_type == "structured":
+        _log_structured_setup(config)
+    return color_mapper
+
+
+def _structured_config(config: SynestheticConfig) -> StructuredMapperConfig:
+    return cast(StructuredMapperConfig, config.structured_mapper)
+
+
+def _log_structured_setup(config: SynestheticConfig) -> None:
+    structured_config = _structured_config(config)
+    logger.info(
+        "Configured structured mapper honest axes",
+        extra={
+            "correlation_id": str(uuid.uuid4()),
+            "sentiment_source": structured_config.sentiment_source,
+            "concreteness_resource": structured_config.concreteness_resource,
+        },
+    )
 
 
 def _load_supervised_data(config: SynestheticConfig) -> tuple:
@@ -96,6 +121,44 @@ def _configure_supervised_mapper(
 ) -> None:
     if isinstance(color_mapper, SupervisedPyTorchColorMapper):
         color_mapper.set_training_labels(labels)
+
+
+def _configure_structured_mapper(
+    color_mapper: ColorMapper,
+    texts: list,
+    sentiment_scores: Optional[npt.NDArray],
+) -> None:
+    if not isinstance(color_mapper, StructuredPyTorchColorMapper):
+        return
+    color_mapper.set_training_texts(texts)
+    if sentiment_scores is not None:
+        color_mapper.set_sentiment_scores(sentiment_scores)
+
+
+def _uses_label_sentiment(args: TrainArgs, config: SynestheticConfig) -> bool:
+    return args.mapper_type == "structured" and _structured_config(config).sentiment_source == "labels"
+
+
+def _validate_sentiment_source(args: TrainArgs, config: SynestheticConfig) -> None:
+    if args.mapper_type != "structured":
+        return
+    source = _structured_config(config).sentiment_source
+    if source not in SUPPORTED_SENTIMENT_SOURCES:
+        raise ValueError(f"Unknown sentiment_source: {source}. Supported: {sorted(SUPPORTED_SENTIMENT_SOURCES)}")
+
+
+def _load_training_data(args: TrainArgs, config: SynestheticConfig) -> tuple:
+    _validate_sentiment_source(args, config)
+    if args.mapper_type == "supervised":
+        print(f"Loading labeled dataset: {config.dataset.name}...")
+        texts, labels = _load_supervised_data(config)
+        return texts, labels, None
+    if _uses_label_sentiment(args, config):
+        print(f"Loading sentiment-labeled dataset: {config.dataset.name}...")
+        texts, sentiment_scores = _load_supervised_data(config)
+        return texts, None, sentiment_scores
+    print(f"Loading dataset from {args.dataset_path}...")
+    return _load_texts_from_file(args.dataset_path), None, None
 
 
 def _apply_determinism(args: TrainArgs, config: SynestheticConfig) -> None:
@@ -124,14 +187,8 @@ def _select_evaluation_embeddings(
 def main(args: TrainArgs) -> None:
     config = SynestheticConfig.from_yaml(args.config)
     _apply_determinism(args, config)
-    labels = None
 
-    if args.mapper_type == "supervised":
-        print(f"Loading labeled dataset: {config.dataset.name}...")
-        texts, labels = _load_supervised_data(config)
-    else:
-        print(f"Loading dataset from {args.dataset_path}...")
-        texts = _load_texts_from_file(args.dataset_path)
+    texts, labels, sentiment_scores = _load_training_data(args, config)
 
     print(f"Encoding {len(texts)} texts with sentence embeddings...")
     embedding_adapter = SentenceEmbeddingAdapter()
@@ -141,6 +198,7 @@ def main(args: TrainArgs) -> None:
 
     if labels is not None:
         _configure_supervised_mapper(color_mapper, labels)
+    _configure_structured_mapper(color_mapper, texts, sentiment_scores)
 
     _execute_training(args, config, color_mapper, embeddings)
 

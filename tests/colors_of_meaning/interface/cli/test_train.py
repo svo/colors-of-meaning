@@ -13,7 +13,10 @@ from colors_of_meaning.interface.cli.train import (
     _create_dataset_adapter,
     _load_supervised_data,
     _load_texts_from_file,
+    _load_training_data,
     _configure_supervised_mapper,
+    _configure_structured_mapper,
+    _uses_label_sentiment,
     _execute_training,
 )
 from colors_of_meaning.infrastructure.ml.learned_color_codebook_factory import (
@@ -59,12 +62,37 @@ class TestCreateColorMapper:
         mock_config.structured_mapper.gamma = 1.0
         mock_config.structured_mapper.num_clusters = 16
         mock_config.structured_mapper.max_chroma = 128.0
+        mock_config.structured_mapper.sentiment_source = "none"
+        mock_config.structured_mapper.concreteness_resource = "concreteness_norms.tsv"
 
         args = TrainArgs(mapper_type="structured")
 
         mapper = _create_color_mapper(args, mock_config)
 
         assert isinstance(mapper, StructuredPyTorchColorMapper)
+
+    @patch("colors_of_meaning.interface.cli.train.SynestheticConfig")
+    def test_should_inject_concreteness_lexicon_into_structured_mapper_when_creating_mapper(
+        self, mock_config_class: Mock
+    ) -> None:
+        mock_config = Mock()
+        mock_config.projector.embedding_dim = 10
+        mock_config.projector.hidden_dim_1 = 8
+        mock_config.projector.hidden_dim_2 = 4
+        mock_config.projector.dropout_rate = 0.1
+        mock_config.training.device = "cpu"
+        mock_config.training.seed = 42
+        mock_config.structured_mapper.alpha = 1.0
+        mock_config.structured_mapper.beta = 1.0
+        mock_config.structured_mapper.gamma = 1.0
+        mock_config.structured_mapper.num_clusters = 16
+        mock_config.structured_mapper.max_chroma = 128.0
+        mock_config.structured_mapper.sentiment_source = "none"
+        mock_config.structured_mapper.concreteness_resource = "concreteness_norms.tsv"
+
+        mapper = _create_color_mapper(TrainArgs(mapper_type="structured"), mock_config)
+
+        assert mapper._concreteness_lexicon is not None
 
     def test_should_raise_when_structured_config_is_none(self) -> None:
         mock_config = Mock()
@@ -422,3 +450,74 @@ class TestSelectEvaluationEmbeddings:
         selected = _select_evaluation_embeddings(embeddings, seed=5, max_evaluation_samples=8)
 
         assert len(selected) == 8
+
+
+class TestConfigureStructuredMapper:
+    def test_should_set_training_texts_on_structured_mapper(self) -> None:
+        mapper = StructuredPyTorchColorMapper(input_dim=2, device="cpu")
+
+        _configure_structured_mapper(mapper, ["a", "b"], None)
+
+        assert mapper._training_texts == ["a", "b"]
+
+    def test_should_set_sentiment_scores_on_structured_mapper_when_dataset_has_labels(self) -> None:
+        mapper = StructuredPyTorchColorMapper(input_dim=2, device="cpu")
+
+        _configure_structured_mapper(mapper, ["a", "b"], np.array([0, 1]))
+
+        assert mapper._sentiment_scores is not None
+
+    def test_should_skip_structured_configuration_for_non_structured_mapper(self) -> None:
+        mapper = Mock()
+
+        _configure_structured_mapper(mapper, ["a"], None)
+
+        mapper.set_training_texts.assert_not_called()
+
+
+class TestUsesLabelSentiment:
+    def test_should_use_label_sentiment_when_structured_source_is_labels(self) -> None:
+        config = Mock()
+        config.structured_mapper.sentiment_source = "labels"
+
+        assert _uses_label_sentiment(TrainArgs(mapper_type="structured"), config) is True
+
+    def test_should_not_use_label_sentiment_when_source_is_none(self) -> None:
+        config = Mock()
+        config.structured_mapper.sentiment_source = "none"
+
+        assert _uses_label_sentiment(TrainArgs(mapper_type="structured"), config) is False
+
+
+class TestLoadTrainingData:
+    @patch("colors_of_meaning.interface.cli.train._load_supervised_data")
+    @patch("builtins.print")
+    def test_should_load_sentiment_scores_when_structured_source_is_labels(
+        self, mock_print: Mock, mock_load: Mock
+    ) -> None:
+        mock_load.return_value = (["t1", "t2"], np.array([0, 1]))
+        config = Mock()
+        config.structured_mapper.sentiment_source = "labels"
+
+        _, labels, sentiment = _load_training_data(TrainArgs(mapper_type="structured"), config)
+
+        assert labels is None and sentiment is not None
+
+    @patch("builtins.print")
+    def test_should_load_file_texts_when_structured_source_is_none(self, mock_print: Mock, tmp_path: Path) -> None:
+        dataset_path = tmp_path / "texts.txt"
+        dataset_path.write_text("a\nb\n")
+        config = Mock()
+        config.structured_mapper.sentiment_source = "none"
+        args = TrainArgs(mapper_type="structured", dataset_path=str(dataset_path))
+
+        texts, labels, sentiment = _load_training_data(args, config)
+
+        assert texts == ["a", "b"] and labels is None and sentiment is None
+
+    def test_should_raise_when_sentiment_source_is_unknown(self) -> None:
+        config = Mock()
+        config.structured_mapper.sentiment_source = "typo"
+
+        with pytest.raises(ValueError):
+            _load_training_data(TrainArgs(mapper_type="structured"), config)

@@ -6,6 +6,9 @@ from colors_of_meaning.infrastructure.ml.structured_pytorch_color_mapper import 
 from colors_of_meaning.infrastructure.ml.supervised_pytorch_color_mapper import (
     SupervisedPyTorchColorMapper,
 )
+from colors_of_meaning.infrastructure.ml.brysbaert_concreteness_lexicon import (
+    BrysbaertConcretenessLexicon,
+)
 from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
 
 
@@ -46,6 +49,7 @@ def _create_structured_mapper(config: SynestheticConfig) -> ColorMapper:
         num_clusters=structured_config.num_clusters,
         max_chroma=structured_config.max_chroma,
         seed=config.training.seed,
+        concreteness_lexicon=BrysbaertConcretenessLexicon(resource_name=structured_config.concreteness_resource),
     )
 
 

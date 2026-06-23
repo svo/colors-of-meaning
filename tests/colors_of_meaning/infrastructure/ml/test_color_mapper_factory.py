@@ -28,6 +28,7 @@ class TestCreateColorMapper:
         mock_config.structured_mapper.gamma = 1.0
         mock_config.structured_mapper.num_clusters = 16
         mock_config.structured_mapper.max_chroma = 128.0
+        mock_config.structured_mapper.concreteness_resource = "concreteness_norms.tsv"
         mock_config.supervised_mapper.classification_weight = 0.1
         mock_config.supervised_mapper.num_classes = 4
         return mock_config

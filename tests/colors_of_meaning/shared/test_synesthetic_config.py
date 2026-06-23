@@ -190,6 +190,46 @@ class TestSynestheticConfig:
 
         assert SynestheticConfig.from_yaml(str(config_path)).distance.sinkhorn_reg == 0.01
 
+    def test_should_round_trip_sentiment_source_when_serialising_structured_config(self, tmp_path: Path) -> None:
+        config = SynestheticConfig(
+            projector=ProjectorConfig(),
+            codebook=CodebookConfig(),
+            training=TrainingConfig(),
+            distance=DistanceConfig(),
+            dataset=DatasetConfig(),
+            structured_mapper=StructuredMapperConfig(sentiment_source="labels"),
+        )
+        config_path = tmp_path / "output.yaml"
+
+        config.to_yaml(str(config_path))
+
+        assert SynestheticConfig.from_yaml(str(config_path)).structured_mapper.sentiment_source == "labels"
+
+    def test_should_round_trip_concreteness_resource_when_serialising_structured_config(self, tmp_path: Path) -> None:
+        config = SynestheticConfig(
+            projector=ProjectorConfig(),
+            codebook=CodebookConfig(),
+            training=TrainingConfig(),
+            distance=DistanceConfig(),
+            dataset=DatasetConfig(),
+            structured_mapper=StructuredMapperConfig(concreteness_resource="custom_norms.tsv"),
+        )
+        config_path = tmp_path / "output.yaml"
+
+        config.to_yaml(str(config_path))
+
+        assert (
+            SynestheticConfig.from_yaml(str(config_path)).structured_mapper.concreteness_resource == "custom_norms.tsv"
+        )
+
+    def test_should_default_structured_config_to_neutral_sentiment_when_unspecified(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "minimal.yaml"
+        config_path.write_text("{}")
+
+        config = SynestheticConfig.from_yaml(str(config_path))
+
+        assert config.structured_mapper.sentiment_source == "none"
+
 
 def _assert_projector_defaults(config: ProjectorConfig) -> None:
     assert config.embedding_dim == 384
@@ -282,6 +322,16 @@ class TestStructuredMapperConfig:
         config = StructuredMapperConfig()
 
         assert config.max_chroma == 128.0
+
+    def test_should_default_sentiment_source_to_none(self) -> None:
+        config = StructuredMapperConfig()
+
+        assert config.sentiment_source == "none"
+
+    def test_should_default_concreteness_resource(self) -> None:
+        config = StructuredMapperConfig()
+
+        assert config.concreteness_resource == "concreteness_norms.tsv"
 
 
 class TestSupervisedMapperConfig:
