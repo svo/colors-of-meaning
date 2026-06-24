@@ -1,12 +1,78 @@
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
+import numpy.typing as npt
 import pytest
 from unittest.mock import Mock, patch
 
 from colors_of_meaning.infrastructure.evaluation.color_histogram_classifier import (
     ColorHistogramClassifier,
 )
+from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import WassersteinDistanceCalculator
+from colors_of_meaning.application.use_case.encode_document_use_case import EncodeDocumentUseCase
+from colors_of_meaning.domain.service.color_mapper import ColorMapper, QuantizedColorMapper
+from colors_of_meaning.domain.model.color_codebook import ColorCodebook
 from colors_of_meaning.domain.model.evaluation_sample import EvaluationSample
 from colors_of_meaning.domain.model.colored_document import ColoredDocument
+from colors_of_meaning.domain.model.lab_color import LabColor
+
+
+class _StructurePreservingColorMapper(ColorMapper):
+    def embed_to_lab(self, embedding: npt.NDArray) -> LabColor:
+        return self.embed_batch_to_lab(np.asarray(embedding).reshape(1, -1))[0]
+
+    def embed_batch_to_lab(self, embeddings: npt.NDArray) -> List[LabColor]:
+        rows = np.asarray(embeddings, dtype=np.float64)
+        return [
+            LabColor(
+                l=float(np.clip(50.0 + 4.0 * row[2], 0.0, 100.0)),
+                a=float(np.clip(30.0 * (row[0] - row[1]), -127.0, 127.0)),
+                b=float(np.clip(30.0 * (row[1] - row[0]), -127.0, 127.0)),
+            )
+            for row in rows
+        ]
+
+    def train(self, embeddings: npt.NDArray, epochs: int, learning_rate: float) -> None:
+        return None
+
+    def epoch_checkpoints(self) -> List[Any]:
+        return []
+
+    def restore_checkpoint(self, checkpoint: Any) -> None:
+        return None
+
+    def save_weights(self, path: str) -> None:
+        return None
+
+    def load_weights(self, path: str) -> None:
+        return None
+
+
+def _class_separated_dataset() -> Tuple[List[EvaluationSample], List[EvaluationSample], Dict[str, npt.NDArray]]:
+    rng = np.random.default_rng(123)
+    dimension = 16
+    class_zero_axis = np.zeros(dimension, dtype=np.float32)
+    class_zero_axis[0] = 4.0
+    class_one_axis = np.zeros(dimension, dtype=np.float32)
+    class_one_axis[1] = 4.0
+
+    embedding_by_text: Dict[str, npt.NDArray] = {}
+    train_samples: List[EvaluationSample] = []
+    test_samples: List[EvaluationSample] = []
+    for label, axis in [(0, class_zero_axis), (1, class_one_axis)]:
+        for index in range(6):
+            text = f"train_{label}_{index}"
+            embedding_by_text[text] = (axis + rng.standard_normal(dimension).astype(np.float32) * 0.1).reshape(
+                1, dimension
+            )
+            train_samples.append(EvaluationSample(text=text, label=label, split="train"))
+        for index in range(3):
+            text = f"test_{label}_{index}"
+            embedding_by_text[text] = (axis + rng.standard_normal(dimension).astype(np.float32) * 0.1).reshape(
+                1, dimension
+            )
+            test_samples.append(EvaluationSample(text=text, label=label, split="test"))
+    return train_samples, test_samples, embedding_by_text
 
 
 class TestColorHistogramClassifier:
@@ -391,3 +457,26 @@ class TestColorHistogramClassifier:
         predictions = classifier.predict(test_samples)
 
         assert predictions[0] == 0
+
+    def test_should_classify_above_chance_when_pipeline_maps_separable_classes(self) -> None:
+        train_samples, test_samples, embedding_by_text = _class_separated_dataset()
+        codebook = ColorCodebook.create_uniform_grid(bins_per_dimension=4)
+        quantized_mapper = QuantizedColorMapper(color_mapper=_StructurePreservingColorMapper(), codebook=codebook)
+        encode_use_case = EncodeDocumentUseCase(quantized_mapper=quantized_mapper)
+        distance_calculator = WassersteinDistanceCalculator(codebook=codebook)
+        adapter = Mock()
+        adapter.encode_document_sentences.side_effect = lambda text: embedding_by_text[text]
+        classifier = ColorHistogramClassifier(
+            embedding_adapter=adapter,
+            encode_use_case=encode_use_case,
+            distance_calculator=distance_calculator,
+            k=3,
+        )
+
+        classifier.fit(train_samples)
+        predictions = classifier.predict(test_samples)
+
+        accuracy = sum(int(prediction == sample.label) for prediction, sample in zip(predictions, test_samples)) / len(
+            test_samples
+        )
+        assert accuracy >= 0.8, f"color pipeline accuracy {accuracy} below floor 0.8 (chance 0.5)"

@@ -52,7 +52,7 @@ class TestInMemoryColorCodebookRepository:
 
         repo.delete("nonexistent")
 
-        assert True
+        assert not repo.exists("nonexistent")
 
     def test_should_clear_all_codebooks(self) -> None:
         repo = InMemoryColorCodebookRepository()

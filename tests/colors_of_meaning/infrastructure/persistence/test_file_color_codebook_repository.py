@@ -52,7 +52,7 @@ class TestFileColorCodebookRepository:
 
         repo.delete("nonexistent")
 
-        assert True
+        assert not repo.exists("nonexistent")
 
     def test_should_create_base_path_if_not_exists(self, tmp_path: Path) -> None:
         base_path = tmp_path / "nested" / "path"

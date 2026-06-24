@@ -25,6 +25,19 @@ def _circular_distance(first: float, second: float) -> float:
     return min(delta, 2.0 * np.pi - delta)
 
 
+def _structured_loss_on(mapper: StructuredPyTorchColorMapper, embeddings: np.ndarray) -> float:
+    hue_targets, lightness_targets, chroma_targets = mapper._prepare_targets(embeddings)
+    mapper.network.eval()
+    with torch.no_grad():
+        pred_lightness, pred_hue, pred_chroma = mapper.network.forward_structured(
+            torch.tensor(embeddings, dtype=torch.float32)
+        )
+        loss = mapper._compute_loss(
+            pred_lightness, pred_hue, pred_chroma, lightness_targets, hue_targets, chroma_targets
+        )
+    return loss.item()
+
+
 class TestStructuredPyTorchColorMapper:
     def test_should_initialize_mapper(self) -> None:
         mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu")
@@ -66,13 +79,15 @@ class TestStructuredPyTorchColorMapper:
 
         assert all(isinstance(color, LabColor) for color in results)
 
-    def test_should_train_mapper(self) -> None:
-        mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", num_clusters=3)
+    def test_should_reduce_structured_loss_when_trained_on_seeded_batch(self) -> None:
+        mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", num_clusters=3, seed=0)
         embeddings = np.random.randn(20, 10).astype(np.float32)
+        loss_before = _structured_loss_on(mapper, embeddings)
 
-        mapper.train(embeddings, epochs=2, learning_rate=0.001)
+        mapper.train(embeddings, epochs=30, learning_rate=0.01)
 
-        assert True
+        loss_after = _structured_loss_on(mapper, embeddings)
+        assert loss_after < loss_before, f"training did not reduce structured loss: {loss_after} !< {loss_before}"
 
     def test_should_save_weights(self, tmp_path: Path) -> None:
         mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu")
@@ -82,15 +97,18 @@ class TestStructuredPyTorchColorMapper:
 
         assert save_path.exists()
 
-    def test_should_load_weights(self, tmp_path: Path) -> None:
-        mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu")
+    def test_should_reproduce_saved_outputs_when_weights_are_reloaded(self, tmp_path: Path) -> None:
+        mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", seed=1)
+        embeddings = np.random.randn(4, 10).astype(np.float32)
         save_path = tmp_path / "model.pth"
         mapper.save_weights(str(save_path))
+        expected = [color.to_tuple() for color in mapper.embed_batch_to_lab(embeddings)]
 
-        new_mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu")
-        new_mapper.load_weights(str(save_path))
+        reloaded = StructuredPyTorchColorMapper(input_dim=10, device="cpu", seed=2)
+        reloaded.load_weights(str(save_path))
 
-        assert True
+        actual = [color.to_tuple() for color in reloaded.embed_batch_to_lab(embeddings)]
+        assert actual == expected
 
     def test_should_use_cpu_when_cuda_not_available(self) -> None:
         with patch("torch.cuda.is_available", return_value=False):
@@ -110,21 +128,21 @@ class TestStructuredPyTorchColorMapper:
 
         assert mapper.num_clusters == 32
 
-    def test_should_handle_small_batch_size(self) -> None:
+    def test_should_produce_valid_color_when_trained_on_small_batch(self) -> None:
         mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", num_clusters=2)
         embeddings = np.random.randn(5, 10).astype(np.float32)
 
         mapper.train(embeddings, epochs=1, learning_rate=0.001)
 
-        assert True
+        assert isinstance(mapper.embed_to_lab(embeddings[0]), LabColor)
 
-    def test_should_print_loss_every_10_epochs(self) -> None:
+    def test_should_print_loss_when_epoch_count_reaches_ten(self, capsys: pytest.CaptureFixture[str]) -> None:
         mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", num_clusters=3)
         embeddings = np.random.randn(20, 10).astype(np.float32)
 
         mapper.train(embeddings, epochs=10, learning_rate=0.001)
 
-        assert True
+        assert "Epoch [10/10]" in capsys.readouterr().out
 
     def test_should_skip_restore_when_best_state_is_none(self) -> None:
         mapper = StructuredPyTorchColorMapper(input_dim=10, device="cpu", num_clusters=3)

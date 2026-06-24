@@ -1,6 +1,10 @@
+from typing import List
+
 import numpy as np
+import pytest
 import torch
 from pathlib import Path
+from scipy.stats import spearmanr
 from unittest.mock import patch
 
 from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import (
@@ -10,6 +14,38 @@ from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import (
 )
 from colors_of_meaning.domain.model.lab_color import LabColor
 from colors_of_meaning.shared.lab_utils import delta_e
+
+
+def _structure_loss_on(mapper: PyTorchColorMapper, embeddings: np.ndarray) -> float:
+    mapper.network.eval()
+    with torch.no_grad():
+        return mapper._structure_loss(torch.tensor(embeddings, dtype=torch.float32)).item()
+
+
+def _projected_colors(mapper: PyTorchColorMapper, embeddings: np.ndarray) -> List[LabColor]:
+    mapper.network.eval()
+    with torch.no_grad():
+        raw_lab = mapper.network(torch.tensor(embeddings, dtype=torch.float32)).cpu().numpy()
+    return [
+        LabColor(
+            l=float(np.clip(row[0], 0.0, 100.0)),
+            a=float(np.clip(row[1], -127.0, 127.0)),
+            b=float(np.clip(row[2], -127.0, 127.0)),
+        )
+        for row in raw_lab
+    ]
+
+
+def _embedding_color_rank_correlation(mapper: PyTorchColorMapper, embeddings: np.ndarray) -> float:
+    colors = _projected_colors(mapper, embeddings)
+    unit_embeddings = embeddings / np.maximum(np.linalg.norm(embeddings, axis=1, keepdims=True), 1e-8)
+    cosine_similarities = []
+    color_distances = []
+    for first in range(len(embeddings)):
+        for second in range(first + 1, len(embeddings)):
+            cosine_similarities.append(float(unit_embeddings[first] @ unit_embeddings[second]))
+            color_distances.append(delta_e(colors[first], colors[second]))
+    return float(spearmanr(cosine_similarities, color_distances).statistic)
 
 
 class TestLabProjectorNetwork:
@@ -64,13 +100,15 @@ class TestPyTorchColorMapper:
         assert len(results) == 2
         assert all(isinstance(color, LabColor) for color in results)
 
-    def test_should_train_mapper(self) -> None:
-        mapper = PyTorchColorMapper(input_dim=10, device="cpu")
+    def test_should_reduce_structure_loss_when_trained_on_seeded_batch(self) -> None:
+        mapper = PyTorchColorMapper(input_dim=10, device="cpu", seed=0)
         embeddings = np.random.randn(50, 10).astype(np.float32)
+        loss_before = _structure_loss_on(mapper, embeddings)
 
-        mapper.train(embeddings, epochs=2, learning_rate=0.001)
+        mapper.train(embeddings, epochs=100, learning_rate=0.01)
 
-        assert True
+        loss_after = _structure_loss_on(mapper, embeddings)
+        assert loss_after < loss_before, f"training did not reduce structure loss: {loss_after} !< {loss_before}"
 
     def test_should_save_weights(self, tmp_path: Path) -> None:
         mapper = PyTorchColorMapper(input_dim=10, device="cpu")
@@ -80,21 +118,23 @@ class TestPyTorchColorMapper:
 
         assert save_path.exists()
 
-    def test_should_load_weights(self, tmp_path: Path) -> None:
-        mapper = PyTorchColorMapper(input_dim=10, device="cpu")
+    def test_should_reproduce_saved_outputs_when_weights_are_reloaded(self, tmp_path: Path) -> None:
+        mapper = PyTorchColorMapper(input_dim=10, device="cpu", seed=1)
+        embeddings = np.random.randn(4, 10).astype(np.float32)
         save_path = tmp_path / "model.pth"
         mapper.save_weights(str(save_path))
+        expected = [color.to_tuple() for color in mapper.embed_batch_to_lab(embeddings)]
 
-        new_mapper = PyTorchColorMapper(input_dim=10, device="cpu")
-        new_mapper.load_weights(str(save_path))
+        reloaded = PyTorchColorMapper(input_dim=10, device="cpu", seed=2)
+        reloaded.load_weights(str(save_path))
 
-        assert True
+        actual = [color.to_tuple() for color in reloaded.embed_batch_to_lab(embeddings)]
+        assert actual == expected
 
     def test_should_remove_generate_targets_when_objective_is_structure_preserving(self) -> None:
         assert not hasattr(PyTorchColorMapper, "_generate_targets")
 
     def test_should_map_near_duplicate_inputs_to_near_identical_lab_when_trained(self) -> None:
-        torch.manual_seed(7)
         rng = np.random.default_rng(7)
         base = rng.standard_normal(16).astype(np.float32)
         near_duplicate = base + rng.standard_normal(16).astype(np.float32) * 0.01
@@ -109,7 +149,6 @@ class TestPyTorchColorMapper:
         assert delta_e(first, second) < 5.0
 
     def test_should_separate_dissimilar_inputs_when_trained(self) -> None:
-        torch.manual_seed(7)
         rng = np.random.default_rng(7)
         base = rng.standard_normal(16).astype(np.float32)
         near_duplicate = base + rng.standard_normal(16).astype(np.float32) * 0.01
@@ -164,21 +203,34 @@ class TestPyTorchColorMapper:
 
         assert mapper.device.type == "cpu"
 
-    def test_should_handle_small_batch_size(self) -> None:
+    def test_should_produce_valid_color_when_trained_on_small_batch(self) -> None:
         mapper = PyTorchColorMapper(input_dim=10, device="cpu")
         embeddings = np.random.randn(5, 10).astype(np.float32)
 
         mapper.train(embeddings, epochs=1, learning_rate=0.001)
 
-        assert True
+        assert isinstance(mapper.embed_to_lab(embeddings[0]), LabColor)
 
-    def test_should_print_loss_every_10_epochs(self) -> None:
+    def test_should_print_loss_when_epoch_count_reaches_ten(self, capsys: pytest.CaptureFixture[str]) -> None:
         mapper = PyTorchColorMapper(input_dim=10, device="cpu")
         embeddings = np.random.randn(20, 10).astype(np.float32)
 
         mapper.train(embeddings, epochs=10, learning_rate=0.001)
 
-        assert True
+        assert "Epoch [10/10]" in capsys.readouterr().out
+
+    def test_should_correlate_embedding_similarity_with_color_proximity_when_trained(self) -> None:
+        rng = np.random.default_rng(7)
+        base = rng.standard_normal(16).astype(np.float32)
+        near_duplicate = base + rng.standard_normal(16).astype(np.float32) * 0.01
+        others = rng.standard_normal((10, 16)).astype(np.float32)
+        embeddings = np.vstack([base, near_duplicate, others]).astype(np.float32)
+        mapper = PyTorchColorMapper(input_dim=16, device="cpu", seed=0)
+
+        mapper.train(embeddings, epochs=300, learning_rate=0.01)
+
+        correlation = _embedding_color_rank_correlation(mapper, embeddings)
+        assert abs(correlation) >= 0.5, f"structure preservation too weak: |rho|={abs(correlation)} < 0.5"
 
     def test_should_reproduce_lab_output_when_same_seed(self) -> None:
         embedding = np.arange(10, dtype=np.float32)
@@ -187,6 +239,15 @@ class TestPyTorchColorMapper:
         second = PyTorchColorMapper(input_dim=10, device="cpu", seed=123).embed_to_lab(embedding)
 
         assert first.to_tuple() == second.to_tuple()
+
+    def test_should_reproduce_batch_lab_outputs_when_same_mapper_maps_twice(self) -> None:
+        mapper = PyTorchColorMapper(input_dim=10, device="cpu", seed=123)
+        batch = np.random.default_rng(0).standard_normal((3, 10)).astype(np.float32)
+
+        first = [color.to_tuple() for color in mapper.embed_batch_to_lab(batch)]
+        second = [color.to_tuple() for color in mapper.embed_batch_to_lab(batch)]
+
+        assert first == second
 
     def test_should_capture_one_checkpoint_per_epoch(self) -> None:
         mapper = PyTorchColorMapper(input_dim=10, device="cpu")

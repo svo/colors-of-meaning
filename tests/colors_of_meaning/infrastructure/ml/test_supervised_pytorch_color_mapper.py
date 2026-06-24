@@ -11,6 +11,14 @@ from colors_of_meaning.infrastructure.ml.supervised_pytorch_color_mapper import 
 from colors_of_meaning.domain.model.lab_color import LabColor
 
 
+def _combined_loss_on(mapper: SupervisedPyTorchColorMapper, embeddings: np.ndarray, labels: np.ndarray) -> float:
+    label_tensor = torch.tensor(labels, dtype=torch.long)
+    mapper.network.eval()
+    with torch.no_grad():
+        lab_output = mapper.network(torch.tensor(embeddings, dtype=torch.float32))
+        return mapper._compute_combined_loss(lab_output, label_tensor).item()
+
+
 class TestSupervisedPyTorchColorMapper:
     def test_should_initialize_with_default_parameters(self) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu")
@@ -107,6 +115,18 @@ class TestSupervisedLabelHandling:
 
 
 class TestSupervisedTraining:
+    def test_should_reduce_combined_loss_when_trained_on_seeded_batch(self) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=3, seed=0)
+        embeddings = np.random.randn(30, 10).astype(np.float32)
+        labels = np.array([0, 1, 2] * 10)
+        mapper.set_training_labels(labels)
+        loss_before = _combined_loss_on(mapper, embeddings, labels)
+
+        mapper.train(embeddings, epochs=50, learning_rate=0.01)
+
+        loss_after = _combined_loss_on(mapper, embeddings, labels)
+        assert loss_after < loss_before, f"training did not reduce combined loss: {loss_after} !< {loss_before}"
+
     def test_should_train_supervised_with_contrastive_objective_when_labels_set(self) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=3)
         embeddings = np.random.randn(30, 10).astype(np.float32)
@@ -149,7 +169,7 @@ class TestSupervisedTraining:
 
         assert mapper.classification_head.out_features == 5
 
-    def test_should_print_loss_every_10_epochs(self) -> None:
+    def test_should_print_loss_when_epoch_count_reaches_ten(self, capsys: pytest.CaptureFixture[str]) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=2)
         embeddings = np.random.randn(10, 10).astype(np.float32)
         labels = np.array([0, 1] * 5)
@@ -157,7 +177,7 @@ class TestSupervisedTraining:
         mapper.set_training_labels(labels)
         mapper.train(embeddings, epochs=10, learning_rate=0.001)
 
-        assert True
+        assert "Epoch [10/10]" in capsys.readouterr().out
 
     def test_should_reproduce_lab_output_when_same_seed(self) -> None:
         embedding = np.arange(10, dtype=np.float32)
@@ -341,15 +361,18 @@ class TestSupervisedWeightPersistence:
         saved_state = torch.load(str(save_path), weights_only=True)  # nosemgrep
         assert all("classification" not in key for key in saved_state.keys())
 
-    def test_should_load_projector_weights(self, tmp_path: Path) -> None:
-        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=4)
+    def test_should_reproduce_projector_outputs_when_weights_are_reloaded(self, tmp_path: Path) -> None:
+        mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=4, seed=1)
+        embeddings = np.random.randn(4, 10).astype(np.float32)
         save_path = tmp_path / "model.pth"
         mapper.save_weights(str(save_path))
+        expected = [color.to_tuple() for color in mapper.embed_batch_to_lab(embeddings)]
 
-        new_mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=4)
-        new_mapper.load_weights(str(save_path))
+        reloaded = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=4, seed=2)
+        reloaded.load_weights(str(save_path))
 
-        assert True
+        actual = [color.to_tuple() for color in reloaded.embed_batch_to_lab(embeddings)]
+        assert actual == expected
 
     def test_should_not_include_classification_head_in_saved_weights(self, tmp_path: Path) -> None:
         mapper = SupervisedPyTorchColorMapper(input_dim=10, device="cpu", num_classes=4)
