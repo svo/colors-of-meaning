@@ -61,3 +61,35 @@ class TestVisualizeDocumentsUseCaseConfusionMatrix:
         mock_renderer.render_confusion_matrix.assert_called_once_with(
             y_true, y_pred, label_names, "/output/confusion.png"
         )
+
+
+class TestVisualizeDocumentsUseCaseCorpusSignatures:
+    def test_should_delegate_corpus_signature_rendering_to_figure_renderer(self) -> None:
+        mock_renderer = Mock()
+        mock_codebook = Mock()
+        documents = [Mock(), Mock()]
+        labels = [0, 1]
+        label_names = ["Darwin", "Smith"]
+
+        use_case = VisualizeDocumentsUseCase(mock_renderer)
+        use_case.execute_corpus_signatures(documents, labels, label_names, mock_codebook, "/output/signatures.png")
+
+        mock_renderer.render_corpus_signatures.assert_called_once_with(
+            documents, labels, label_names, mock_codebook, "/output/signatures.png", 24
+        )
+
+    def test_should_pass_custom_top_colors(self) -> None:
+        mock_renderer = Mock()
+        mock_codebook = Mock()
+        documents = [Mock(), Mock()]
+        labels = [0, 1]
+        label_names = ["Darwin", "Smith"]
+
+        use_case = VisualizeDocumentsUseCase(mock_renderer)
+        use_case.execute_corpus_signatures(
+            documents, labels, label_names, mock_codebook, "/output/signatures.png", top_colors=8
+        )
+
+        mock_renderer.render_corpus_signatures.assert_called_once_with(
+            documents, labels, label_names, mock_codebook, "/output/signatures.png", 8
+        )

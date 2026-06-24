@@ -1,5 +1,6 @@
 from typing import List
 
+from colors_of_meaning.domain.model.color_codebook import ColorCodebook
 from colors_of_meaning.domain.model.colored_document import ColoredDocument
 from colors_of_meaning.domain.service.figure_renderer import FigureRenderer
 
@@ -35,3 +36,14 @@ class VisualizeDocumentsUseCase:
         output_path: str,
     ) -> None:
         self.figure_renderer.render_confusion_matrix(y_true, y_pred, label_names, output_path)
+
+    def execute_corpus_signatures(
+        self,
+        documents: List[ColoredDocument],
+        labels: List[int],
+        label_names: List[str],
+        codebook: ColorCodebook,
+        output_path: str,
+        top_colors: int = 24,
+    ) -> None:
+        self.figure_renderer.render_corpus_signatures(documents, labels, label_names, codebook, output_path, top_colors)

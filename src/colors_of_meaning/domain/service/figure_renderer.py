@@ -40,3 +40,15 @@ class FigureRenderer(ABC):
         output_path: str,
     ) -> None:
         raise NotImplementedError
+
+    @abstractmethod
+    def render_corpus_signatures(
+        self,
+        documents: List[ColoredDocument],
+        labels: List[int],
+        label_names: List[str],
+        codebook: ColorCodebook,
+        output_path: str,
+        top_colors: int = 24,
+    ) -> None:
+        raise NotImplementedError

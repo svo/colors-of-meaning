@@ -1,10 +1,11 @@
 import math
 import os
-from typing import List
+from typing import Any, List
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 from sklearn.manifold import TSNE  # type: ignore
 from sklearn.metrics import confusion_matrix  # type: ignore
 
@@ -87,7 +88,8 @@ class MatplotlibFigureRenderer(FigureRenderer):
     ) -> None:
         histograms = np.array([doc.histogram for doc in documents])
 
-        tsne = TSNE(n_components=2, perplexity=30, random_state=42)
+        perplexity = min(30, len(documents) - 1)
+        tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)
         projections = tsne.fit_transform(histograms)
 
         fig, ax = plt.subplots(figsize=(10, 8))
@@ -154,6 +156,50 @@ class MatplotlibFigureRenderer(FigureRenderer):
 
         fig.tight_layout()
         self._save_figure(fig, output_path)
+
+    def render_corpus_signatures(
+        self,
+        documents: List[ColoredDocument],
+        labels: List[int],
+        label_names: List[str],
+        codebook: ColorCodebook,
+        output_path: str,
+        top_colors: int = 24,
+    ) -> None:
+        fig, axes = plt.subplots(len(label_names), 1, figsize=(12, 1.5 * len(label_names)))
+        axes = np.atleast_1d(axes)
+
+        for label_index, name in enumerate(label_names):
+            histograms = self._corpus_histograms(documents, labels, label_index)
+            if not histograms:
+                continue
+            ax = axes[label_index]
+            self._draw_color_signature(ax, np.mean(histograms, axis=0), codebook, top_colors)
+            ax.set_ylabel(name, rotation=0, ha="right", va="center")
+
+        fig.suptitle(f"Per-corpus color signature (top {top_colors} colors)")
+        fig.tight_layout()
+        self._save_figure(fig, output_path)
+
+    @staticmethod
+    def _corpus_histograms(
+        documents: List[ColoredDocument], labels: List[int], label_index: int
+    ) -> List[npt.NDArray[np.float64]]:
+        return [documents[i].histogram for i in range(len(documents)) if labels[i] == label_index]
+
+    @staticmethod
+    def _draw_color_signature(ax: Any, mean_histogram: Any, codebook: ColorCodebook, top_colors: int) -> None:
+        top_bins = np.argsort(mean_histogram)[::-1][:top_colors]
+        left = 0.0
+        for bin_index in top_bins:
+            width = float(mean_histogram[bin_index])
+            rgb = np.array(lab_to_rgb(codebook.colors[int(bin_index)]), dtype=float) / 255.0
+            ax.barh(0, width, left=left, height=1.0, color=rgb)
+            left += width
+        ax.set_xlim(0, left)
+        ax.set_ylim(-0.5, 0.5)
+        ax.set_yticks([])
+        ax.set_xticks([])
 
     @staticmethod
     def _select_samples_per_class(labels: List[int], num_classes: int, samples_per_class: int) -> List[int]:

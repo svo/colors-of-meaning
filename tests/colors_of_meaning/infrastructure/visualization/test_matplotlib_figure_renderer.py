@@ -257,7 +257,7 @@ class TestRenderTsneProjection:
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.TSNE")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
-    def test_should_run_tsne_on_histograms(
+    def test_should_clamp_tsne_perplexity_below_sample_count(
         self,
         mock_plt: Mock,
         mock_tsne_class: Mock,
@@ -287,7 +287,7 @@ class TestRenderTsneProjection:
         output_path = str(tmp_path / "projection.png")
         renderer.render_tsne_projection(documents, labels, label_names, output_path)
 
-        mock_tsne_class.assert_called_once_with(n_components=2, perplexity=30, random_state=42)
+        mock_tsne_class.assert_called_once_with(n_components=2, perplexity=1, random_state=42)
 
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.matplotlib.colormaps")
     @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.TSNE")
@@ -495,6 +495,180 @@ class TestRenderConfusionMatrix:
         renderer.render_confusion_matrix([0, 0, 1, 1], [0, 1, 0, 1], ["A", "B"], output_path)
 
         mock_fig.savefig.assert_called_once_with(output_path, dpi=150, bbox_inches="tight")
+
+
+class TestRenderCorpusSignatures:
+    def _make_inputs(self) -> tuple:
+        histogram = np.array([0.4, 0.3, 0.2, 0.1])
+        documents = [
+            ColoredDocument(histogram=histogram, document_id="darwin_0"),
+            ColoredDocument(histogram=histogram, document_id="smith_0"),
+        ]
+        labels = [0, 1]
+        label_names = ["Darwin", "Smith"]
+        colors = [LabColor(l=50.0, a=0.0, b=0.0) for _ in range(4)]
+        codebook = ColorCodebook(colors=colors, num_bins=4)
+        return documents, labels, label_names, codebook
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_create_one_subplot_row_per_corpus(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.return_value = (128, 128, 128)
+        mock_plt.subplots.return_value = (Mock(), np.array([Mock(), Mock()]))
+        documents, labels, label_names, codebook = self._make_inputs()
+
+        renderer = MatplotlibFigureRenderer()
+        renderer.render_corpus_signatures(documents, labels, label_names, codebook, str(tmp_path / "sig.png"))
+
+        mock_plt.subplots.assert_called_once()
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_draw_color_bars_for_each_corpus(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.return_value = (128, 128, 128)
+        mock_ax = Mock()
+        mock_plt.subplots.return_value = (Mock(), np.array([mock_ax, Mock()]))
+        documents, labels, label_names, codebook = self._make_inputs()
+
+        renderer = MatplotlibFigureRenderer()
+        renderer.render_corpus_signatures(documents, labels, label_names, codebook, str(tmp_path / "sig.png"))
+
+        assert mock_ax.barh.call_count == 4
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_set_suptitle_with_top_colors(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.return_value = (128, 128, 128)
+        mock_fig = Mock()
+        mock_plt.subplots.return_value = (mock_fig, np.array([Mock(), Mock()]))
+        documents, labels, label_names, codebook = self._make_inputs()
+
+        renderer = MatplotlibFigureRenderer()
+        renderer.render_corpus_signatures(documents, labels, label_names, codebook, str(tmp_path / "sig.png"))
+
+        mock_fig.suptitle.assert_called_once_with("Per-corpus color signature (top 24 colors)")
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_save_corpus_signatures_to_file(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.return_value = (128, 128, 128)
+        mock_fig = Mock()
+        mock_plt.subplots.return_value = (mock_fig, np.array([Mock(), Mock()]))
+        documents, labels, label_names, codebook = self._make_inputs()
+
+        renderer = MatplotlibFigureRenderer()
+        output_path = str(tmp_path / "sig.png")
+        renderer.render_corpus_signatures(documents, labels, label_names, codebook, output_path)
+
+        mock_fig.savefig.assert_called_once_with(output_path, dpi=150, bbox_inches="tight")
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_color_each_corpus_by_its_own_dominant_bin(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.side_effect = lambda color: (int(color.l), 0, 0)
+        mock_ax_a = Mock()
+        mock_ax_b = Mock()
+        mock_plt.subplots.return_value = (Mock(), np.array([mock_ax_a, mock_ax_b]))
+        documents = [
+            ColoredDocument(histogram=np.array([0.7, 0.1, 0.1, 0.1]), document_id="a_0"),
+            ColoredDocument(histogram=np.array([0.1, 0.1, 0.1, 0.7]), document_id="b_0"),
+        ]
+        labels = [0, 1]
+        label_names = ["A", "B"]
+        codebook = ColorCodebook(colors=[LabColor(l=float(i * 10), a=0.0, b=0.0) for i in range(4)], num_bins=4)
+
+        renderer = MatplotlibFigureRenderer()
+        renderer.render_corpus_signatures(documents, labels, label_names, codebook, str(tmp_path / "sig.png"))
+
+        first_bin_colors = (
+            mock_ax_a.barh.call_args_list[0].kwargs["color"][0],
+            mock_ax_b.barh.call_args_list[0].kwargs["color"][0],
+        )
+        assert first_bin_colors[0] != first_bin_colors[1]
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_limit_bars_to_top_colors(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.return_value = (128, 128, 128)
+        mock_ax = Mock()
+        mock_plt.subplots.return_value = (Mock(), np.array([mock_ax]))
+        documents = [ColoredDocument(histogram=np.array([0.4, 0.3, 0.2, 0.1]), document_id="a_0")]
+        codebook = ColorCodebook(colors=[LabColor(l=50.0, a=0.0, b=0.0) for _ in range(4)], num_bins=4)
+
+        renderer = MatplotlibFigureRenderer()
+        renderer.render_corpus_signatures(documents, [0], ["A"], codebook, str(tmp_path / "sig.png"), top_colors=2)
+
+        assert mock_ax.barh.call_count == 2
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_stack_bars_left_to_right_by_cumulative_width(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.return_value = (128, 128, 128)
+        mock_ax = Mock()
+        mock_plt.subplots.return_value = (Mock(), np.array([mock_ax]))
+        documents = [ColoredDocument(histogram=np.array([0.4, 0.3, 0.2, 0.1]), document_id="a_0")]
+        codebook = ColorCodebook(colors=[LabColor(l=50.0, a=0.0, b=0.0) for _ in range(4)], num_bins=4)
+
+        renderer = MatplotlibFigureRenderer()
+        renderer.render_corpus_signatures(documents, [0], ["A"], codebook, str(tmp_path / "sig.png"))
+
+        lefts = [call.kwargs["left"] for call in mock_ax.barh.call_args_list]
+        assert np.allclose(lefts, [0.0, 0.4, 0.7, 0.9])
+
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.plt")
+    @patch("colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer.lab_to_rgb")
+    def test_should_skip_corpus_with_no_documents(
+        self,
+        mock_lab_to_rgb: Mock,
+        mock_plt: Mock,
+        tmp_path: Path,
+    ) -> None:
+        mock_lab_to_rgb.return_value = (128, 128, 128)
+        mock_ax_a = Mock()
+        mock_ax_b = Mock()
+        mock_plt.subplots.return_value = (Mock(), np.array([mock_ax_a, mock_ax_b]))
+        documents = [ColoredDocument(histogram=np.array([0.4, 0.3, 0.2, 0.1]), document_id="a_0")]
+        codebook = ColorCodebook(colors=[LabColor(l=50.0, a=0.0, b=0.0) for _ in range(4)], num_bins=4)
+
+        renderer = MatplotlibFigureRenderer()
+        renderer.render_corpus_signatures(documents, [0], ["A", "B"], codebook, str(tmp_path / "sig.png"))
+
+        assert mock_ax_b.barh.call_count == 0
 
 
 class TestSelectSamplesPerClass:

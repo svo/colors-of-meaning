@@ -323,6 +323,28 @@ tox -e visualize -- --visualization-type confusion_matrix --dataset ag_news --me
 - `--output-dir`: Output directory for figures (default: `reports/figures`)
 - `--max-samples`: Maximum number of samples to process (default: 500)
 
+### Compare Text Corpora by Color
+
+Render side-by-side **color-signature** and **t-SNE** figures comparing several labelled text corpora (e.g. books by different authors). Each corpus is one label; paragraphs are encoded to color histograms, then a per-corpus mean color signature and a t-SNE projection (points colored by corpus) are written to `--output-dir`.
+
+```bash
+tox -e visualize_corpus -- \
+  --corpus-specs "Darwin=data/darwin.txt,Smith=data/smith.txt,Austen=data/austen.txt" \
+  --paragraphs-per-corpus 60
+```
+
+**Arguments**:
+- `--corpus-specs`: Comma-separated `label=path` pairs, one per corpus (default: `sample=data/sample_train.txt`)
+- `--config`: Configuration YAML file (default: `configs/base.yaml`)
+- `--model-path`: Path to trained projector model (default: `artifacts/models/projector.pth`)
+- `--codebook-name`: Color codebook name (default: `codebook_4096`)
+- `--output-dir`: Output directory for figures (default: `reports/figures`)
+- `--paragraphs-per-corpus`: Body paragraphs sampled per corpus (default: 60)
+- `--min-paragraph-chars`: Minimum characters for a paragraph to count as a document (default: 200)
+- `--top-colors`: Number of dominant colors shown per corpus signature (default: 24)
+
+Requires pre-built projector and codebook artifacts; raw text files have any Project Gutenberg boilerplate stripped and are sampled from the body. Outputs `corpus_color_signatures.png` and `corpus_color_tsne.png`.
+
 ### Query by Color Palette
 
 Retrieve documents matching a specified color distribution:
@@ -375,6 +397,7 @@ vagrant ssh
 | `tox -e compress -- [args]` | Analyze compression ratios and baselines |
 | `tox -e eval -- [args]` | Evaluate classification performance |
 | `tox -e visualize -- [args]` | Generate visualizations |
+| `tox -e visualize_corpus -- [args]` | Compare labelled text corpora by color (signatures + t-SNE) |
 | `tox -e query -- [args]` | Query documents by color palette |
 
 ### Test
