@@ -345,6 +345,46 @@ tox -e visualize_corpus -- \
 
 Requires pre-built projector and codebook artifacts; raw text files have any Project Gutenberg boilerplate stripped and are sampled from the body. Outputs `corpus_color_signatures.png` and `corpus_color_tsne.png`.
 
+### Encode a Document as an A4 Image
+
+Turn a single document into one printable **A4 "colors of meaning" image** — a perceptual rendering of its semantic color distribution that prints at true A4 size (2480×3508 px at 300 DPI, with embedded DPI metadata). Colors are the genuine `Lab → RGB` of each codebook bin, so the page is an honest artifact rather than a content-cropped figure.
+
+```bash
+# Recoverable score image: one perceptual cell per sentence, in reading order
+tox -e encode_image -- --text "Markets fell sharply today. Investors fled to bonds." --layout score
+
+# Aesthetic posters of the document's color distribution
+tox -e encode_image -- --dataset-path data/sample_test.txt --index 0 --layout signature
+tox -e encode_image -- --dataset-path data/sample_test.txt --index 0 --layout mosaic
+```
+
+**Arguments**:
+- `--text`: Inline document text (takes precedence over `--dataset-path`)
+- `--dataset-path`: Text file, one document per line; encodes the `--index` document (default: `data/sample_test.txt`)
+- `--index`: Index of the document to encode from `--dataset-path` (default: 0)
+- `--layout`: `score` (recoverable, one cell per sentence), `signature` (proportional bands), or `mosaic` (frequency-tinted codebook grid) (default: `score`)
+- `--dpi`: Output resolution; A4 pixel size scales with DPI (default: 300)
+- `--config`: Configuration YAML file (default: `configs/base.yaml`)
+- `--model-path`: Path to trained projector model (default: `artifacts/models/projector.pth`)
+- `--codebook-name`: Color codebook name (default: `codebook_4096`)
+- `--output-path`: Output PNG path (default: `reports/figures/document_a4.png`)
+
+The `score` layout is **decodable**: re-reading the page samples each cell's perceptual color and re-quantizes it to recover a color histogram. Because the codebook includes out-of-gamut Lab points that `lab_to_rgb` clips, the perceptual round-trip is *approximate* on the full 4,096-color codebook (exact on a coarse in-gamut codebook), which is sufficient to retrieve the source document by color distance. The original *text* is intentionally not recoverable — the 384-dim → 3-dim projection is lossy by design.
+
+```bash
+# Decode a score image and retrieve its source document from an encoded corpus
+tox -e decode_image -- \
+  --image-path reports/figures/document_a4.png \
+  --encoded-documents artifacts/encoded/test_documents.pkl \
+  --k 5
+```
+
+**Arguments**:
+- `--image-path`: Path to the A4 score image to decode (default: `reports/figures/document_a4.png`)
+- `--codebook-name`: Color codebook name (default: `codebook_4096`)
+- `--encoded-documents`: Encoded corpus for nearest-document retrieval; omit to print only the recovered histogram summary (default: none)
+- `--k`: Number of nearest documents to return (default: 5)
+
 ### Query by Color Palette
 
 Retrieve documents matching a specified color distribution:

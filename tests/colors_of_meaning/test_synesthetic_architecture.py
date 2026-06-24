@@ -56,6 +56,8 @@ def test_should_use_application_use_case_in_cli() -> None:
             "colors_of_meaning.interface.cli.compress",
             "colors_of_meaning.interface.cli.query",
             "colors_of_meaning.interface.cli.ablate",
+            "colors_of_meaning.interface.cli.encode_image",
+            "colors_of_meaning.interface.cli.decode_image",
         )
         .should_import("colors_of_meaning.application.use_case.*")
         .check("colors_of_meaning")
