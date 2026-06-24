@@ -10,15 +10,17 @@
 
 This project implements the **Colors of Meaning** experiment described in [the research article](https://www.qual.is/posts/colors-of-meaning), which explores a novel approach to semantic understanding through synesthesia.
 
-The core idea is to map semantic embeddings into perceptual color space (CIE Lab), creating a synesthetic representation where documents are color distributions rather than high-dimensional vectors. Rather than working with abstract 384-dimensional embeddings, we translate semantic meaning into the intuitive language of color: hue, lightness, and saturation. This approach achieves extreme compression (1000x+) while maintaining interpretable semantic structure, opening new possibilities for understanding how meaning relates to perception.
+The core idea is to map semantic embeddings into perceptual color space (CIE Lab), creating a synesthetic representation where documents are color distributions rather than high-dimensional vectors. Rather than working with abstract 384-dimensional embeddings, we translate semantic meaning into the intuitive language of color: hue, lightness, and saturation. This approach achieves ~1024:1 compression — a 384-dim float32 embedding (384 × 32 = 12,288 bits) reduces to a single 12-bit code over a 4,096-color palette (log2(4096) = 12 bits), an exact 12,288 / 12 = 1024:1 ratio — while maintaining interpretable semantic structure, opening new possibilities for understanding how meaning relates to perception.
+
+> **Implemented vs. blog figures:** the referenced [research article](https://www.qual.is/posts/colors-of-meaning) discusses aspirational 768-dim embeddings at ~2000:1; this repository ships 384-dim embeddings at the exact ~1024:1 above.
 
 ### Key Features
 
 - **Semantic Color Mapping**: Neural projector maps 384-dim embeddings to 3-dim Lab color space
 - **Structured Color Mapping**: Self-supervised projector variant where hue encodes semantic clusters, lightness encodes sentiment, and chroma encodes concreteness
 - **Supervised Color Mapping**: Joint optimization of color projection and classification using ground-truth labels; classification head discarded after training
-- **Extreme Compression**: 12,288 bits/sentence to 12 bits (4,096-color palette)
-- **Compression Baselines**: Compare color VQ against gzip and Product Quantization at matched bit budgets
+- **Extreme Compression**: 12,288 bits/sentence to 12 bits (4,096-color palette) — an exact ~1024:1 ratio
+- **Compression Baselines**: Compare the fixed uniform Lab color grid (nearest-color quantization) against gzip and Product Quantization at matched bit budgets
 - **Interpretable Structure**: Hue clusters synonyms, lightness encodes sentiment, saturation distinguishes abstract/concrete
 - **Query by Color Palette**: Retrieve documents by specifying Lab colors with weights (CLI and API)
 - **Fast Retrieval**: Wasserstein distance on color histograms for document comparison
@@ -35,7 +37,7 @@ The core idea is to map semantic embeddings into perceptual color space (CIE Lab
 The TF-IDF and HNSW rows are the published full-test-set baselines. The **Color
 Method** figure is produced end-to-end on AG News by a committed run configuration
 ([`configs/agnews_run.yaml`](configs/agnews_run.yaml)): the supervised color mapper,
-seed 42, CPU, and `max_samples: 400` (100 documents per class). At ~1,000×
+seed 42, CPU, and `max_samples: 400` (100 documents per class). At ~1024:1
 compression (12 bits/token over a 4,096-color palette) it lands within ~1 point of
 TF-IDF and ~4 points of HNSW *at the same sample budget*. For the apples-to-apples
 matched-budget comparison and the exact commands that regenerate the number, see
@@ -107,7 +109,7 @@ config and these tolerances are version-controlled so the figure stays attributa
 - ✅ **Phase 4**: Structured color mapping, compression comparison baselines, query by color palette
 - ✅ **Phase 5**: Supervised color mapping with joint projection + classification training
 
-**Quality Gates**: All passing (flake8, black, bandit, semgrep, xenon, mypy, pip-audit, 100% coverage, 825 tests)
+**Quality Gates**: All passing (flake8, black, bandit, semgrep, xenon, mypy, pip-audit, 100% coverage)
 
 ## Quick Start
 
@@ -165,7 +167,7 @@ tox -e query -- \
 
 ### Compare Compression Baselines
 
-Compare color VQ compression against gzip and Product Quantization:
+Compare the fixed uniform Lab color grid against gzip and Product Quantization:
 
 ```bash
 tox -e compress -- --compare-baselines --embeddings-path artifacts/encoded/test_embeddings.npy
@@ -251,8 +253,8 @@ tox -e compare -- --config configs/base.yaml --k 5
 Analyze compression ratios and compare against baselines:
 
 ```bash
-# Color VQ compression analysis
-tox -e compress -- --config configs/base.yaml --method vq
+# Fixed-grid color compression analysis
+tox -e compress -- --config configs/base.yaml
 
 # Compare against gzip and Product Quantization baselines
 tox -e compress -- --compare-baselines --embeddings-path artifacts/encoded/test_embeddings.npy
@@ -260,12 +262,14 @@ tox -e compress -- --compare-baselines --embeddings-path artifacts/encoded/test_
 
 **Arguments**:
 - `--config`: Configuration YAML file (default: `configs/base.yaml`)
-- `--encoded-documents`: Path to encoded documents (default: `artifacts/encoded/test_documents.pkl`)
-- `--method`: Compression method (default: `vq`)
-- `--compare-baselines`: Run gzip and Product Quantization baselines instead of VQ analysis (default: `false`)
-- `--embeddings-path`: Path to raw embeddings for baseline comparison (default: `artifacts/encoded/test_embeddings.npy`)
+- `--embeddings-path`: Path to raw float32 embeddings to compress (default: `artifacts/encoded/test_embeddings.npy`)
+- `--model-path`: Path to the trained projector model (default: `artifacts/models/projector.pth`)
+- `--codebook-name`: Color codebook name (default: `codebook_4096`)
+- `--compare-baselines`: Run gzip and Product Quantization baselines instead of the fixed-grid color analysis (default: `false`)
 
 When `--compare-baselines` is enabled, the tool loads raw float32 embeddings and runs gzip (lossless) and Product Quantization (M=48 subspaces, k=256 centroids) baselines, reporting compression ratio, bits per token, and reconstruction error (MSE) for each method.
+
+The default (non-baseline) analysis quantizes projector outputs against a **fixed uniform Lab color grid** (`ColorCodebook.create_uniform_grid`) by nearest-color assignment — a static, hand-specified palette, not a learned vector-quantization codebook. Learned VQ arrives with [`007-p1-1-learned-vq-codebook`](.specs/007-p1-1-learned-vq-codebook/SPEC.md), after which the "VQ" terminology becomes accurate.
 
 ### Evaluation
 
@@ -570,7 +574,7 @@ colors_of_meaning/
 
 ## Engineering Practices
 
-- 100% test coverage (825 tests)
+- 100% test coverage
 - Dependency injection using [Lagom](https://github.com/meadsteve/lagom)
 - Structured logging with correlation IDs
 - Consumer-Driven Contract Testing (CDCT)

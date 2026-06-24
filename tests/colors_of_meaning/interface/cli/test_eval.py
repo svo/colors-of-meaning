@@ -225,7 +225,7 @@ class TestEvalCLI:
         tmp_path: Path,
     ) -> None:
         mock_config = Mock()
-        mock_config.projector.embedding_dim = 768
+        mock_config.projector.embedding_dim = 384
         mock_config.projector.hidden_dim_1 = 512
         mock_config.projector.hidden_dim_2 = 256
         mock_config.projector.dropout_rate = 0.1
@@ -302,7 +302,7 @@ class TestEvalCLI:
         tmp_path: Path,
     ) -> None:
         mock_config = Mock()
-        mock_config.projector.embedding_dim = 768
+        mock_config.projector.embedding_dim = 384
         mock_config.projector.hidden_dim_1 = 512
         mock_config.projector.hidden_dim_2 = 256
         mock_config.projector.dropout_rate = 0.1

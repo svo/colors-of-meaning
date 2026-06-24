@@ -427,3 +427,18 @@ class TestConfigFileBackCompat:
 
         assert config.supervised_mapper.classification_weight == 0.1
         assert config.supervised_mapper.num_classes == 4
+
+
+README_PATH = Path(__file__).resolve().parents[3] / "README.MD"
+
+
+class TestDocsConsistency:
+    def test_should_document_the_configured_embedding_dim_when_reading_readme(self) -> None:
+        readme_text = README_PATH.read_text()
+
+        assert str(ProjectorConfig().embedding_dim) in readme_text
+
+    def test_should_document_the_exact_compression_ratio_when_reading_readme(self) -> None:
+        readme_text = README_PATH.read_text()
+
+        assert "1024:1" in readme_text
