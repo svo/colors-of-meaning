@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CONFIG="configs/base.yaml"
+K="5"
+QUERY_INDEX=""
+ENCODED_OUTPUT="artifacts/encoded/test_local_documents.pkl"
+CLEANUP="false"
+CORPUS_PATH=""
+
+PROJECTOR_ARTIFACT="artifacts/models/projector.pth"
+CODEBOOK_ARTIFACT="artifacts/codebooks/codebook_4096.pkl"
+
+usage() {
+  echo "Usage: $0 [OPTIONS] <corpus.txt>"
+  echo ""
+  echo "Exercise the text-to-color pipeline for a specific .txt (one document per line):"
+  echo "encode each document to a color histogram, then report the nearest documents by"
+  echo "perceptual color distance. Requires pre-built projector and codebook artifacts."
+  echo ""
+  echo "Options:"
+  echo "  --config <path>       Experiment config (default: ${CONFIG})"
+  echo "  --k <n>               Nearest neighbours to report (default: ${K})"
+  echo "  --query-index <n>     Compare only this document index (default: every document)"
+  echo "  --output-path <path>  Encoded histograms output (default: ${ENCODED_OUTPUT})"
+  echo "  -c, --cleanup         Remove the encoded output when finished"
+  echo "  -h, --help            Show this help"
+}
+
+handle_options() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --config)
+        [ $# -ge 2 ] || { echo "Error: $1 requires a value" >&2; exit 1; }
+        CONFIG="$2"; shift 2 ;;
+      --k)
+        [ $# -ge 2 ] || { echo "Error: $1 requires a value" >&2; exit 1; }
+        K="$2"; shift 2 ;;
+      --query-index)
+        [ $# -ge 2 ] || { echo "Error: $1 requires a value" >&2; exit 1; }
+        QUERY_INDEX="$2"; shift 2 ;;
+      --output-path)
+        [ $# -ge 2 ] || { echo "Error: $1 requires a value" >&2; exit 1; }
+        ENCODED_OUTPUT="$2"; shift 2 ;;
+      -c | --cleanup)
+        CLEANUP="true"; shift ;;
+      -h | --help)
+        usage; exit 0 ;;
+      --)
+        shift ;;
+      -*)
+        echo "Invalid option: $1" >&2; usage; exit 1 ;;
+      *)
+        if [ -n "${CORPUS_PATH}" ]; then
+          echo "Error: unexpected extra argument: $1" >&2; usage; exit 1
+        fi
+        CORPUS_PATH="$1"; shift ;;
+    esac
+  done
+}
+
+require_corpus() {
+  if [ -z "${CORPUS_PATH}" ]; then
+    echo "Error: <corpus.txt> is required" >&2
+    usage
+    exit 1
+  fi
+  if [ ! -f "${CORPUS_PATH}" ]; then
+    echo "Error: file not found: ${CORPUS_PATH}" >&2
+    exit 1
+  fi
+}
+
+require_artifacts() {
+  local missing="false"
+  if [ ! -f "${PROJECTOR_ARTIFACT}" ]; then
+    echo "Error: missing projector artifact: ${PROJECTOR_ARTIFACT}" >&2
+    missing="true"
+  fi
+  if [ ! -f "${CODEBOOK_ARTIFACT}" ]; then
+    echo "Error: missing codebook artifact: ${CODEBOOK_ARTIFACT}" >&2
+    missing="true"
+  fi
+  if [ "${missing}" = "true" ]; then
+    echo "" >&2
+    echo "Pre-built artifacts are required. Train them first, for example:" >&2
+    echo "  tox -e train -- --config ${CONFIG} --mapper-type supervised" >&2
+    exit 1
+  fi
+}
+
+document_count() {
+  grep -c '[^[:space:]]' "${CORPUS_PATH}" || true
+}
+
+encode_corpus() {
+  echo ""
+  echo "---------------------------------------"
+  echo "Encoding ${CORPUS_PATH} -> ${ENCODED_OUTPUT}"
+  echo "---------------------------------------"
+  tox -e encode -- \
+    --config "${CONFIG}" \
+    --dataset-path "${CORPUS_PATH}" \
+    --output-path "${ENCODED_OUTPUT}"
+}
+
+compare_document() {
+  tox -e compare -- \
+    --config "${CONFIG}" \
+    --encoded-documents "${ENCODED_OUTPUT}" \
+    --k "${K}" \
+    --query-index "$1"
+}
+
+compare_documents() {
+  echo ""
+  echo "---------------------------------------"
+  echo "Nearest documents by color distance"
+  echo "---------------------------------------"
+
+  if [ -n "${QUERY_INDEX}" ]; then
+    compare_document "${QUERY_INDEX}"
+    return
+  fi
+
+  local count
+  count="$(document_count)"
+  if [ "${count}" -eq 0 ]; then
+    echo "Error: no documents found in ${CORPUS_PATH}" >&2
+    exit 1
+  fi
+
+  local index=0
+  while [ "${index}" -lt "${count}" ]; do
+    compare_document "${index}"
+    index=$((index + 1))
+  done
+}
+
+cleanup_output() {
+  if [ "${CLEANUP}" = "true" ]; then
+    echo ""
+    echo "Removing ${ENCODED_OUTPUT}"
+    rm -f "${ENCODED_OUTPUT}"
+  fi
+}
+
+handle_options "$@"
+require_corpus
+require_artifacts
+encode_corpus
+compare_documents
+cleanup_output
