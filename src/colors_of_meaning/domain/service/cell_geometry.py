@@ -2,6 +2,18 @@ from typing import List, Tuple
 
 CellBox = Tuple[int, int, int, int]
 
+A4_WIDTH_MM = 210
+A4_HEIGHT_MM = 297
+MILLIMETERS_PER_INCH = 25.4
+
+
+def a4_canvas_pixels(dpi: int) -> Tuple[int, int]:
+    if dpi <= 0:
+        raise ValueError(f"dpi must be positive, got {dpi}")
+    width = round(A4_WIDTH_MM / MILLIMETERS_PER_INCH * dpi)
+    height = round(A4_HEIGHT_MM / MILLIMETERS_PER_INCH * dpi)
+    return (width, height)
+
 
 def _edges(extent: int, divisions: int) -> List[int]:
     return [round(index * extent / divisions) for index in range(divisions + 1)]

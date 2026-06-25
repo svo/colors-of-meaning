@@ -385,6 +385,38 @@ tox -e decode_image -- \
 - `--encoded-documents`: Encoded corpus for nearest-document retrieval; omit to print only the recovered histogram summary (default: none)
 - `--k`: Number of nearest documents to return (default: 5)
 
+### Encode a Document Losslessly
+
+Where the A4 image above is **lossy and semantic** — the colors *mean* something (a perceptual projection) and the source text cannot be recovered — this codec is **lossless and model-free**. The page is a **color barcode**: each cell's color is a *data symbol* (a byte), not a meaning. There is no embedding, projector, or Lab codebook involved — `text → UTF-8 → DEFLATE → CRC-framed pages → palette cells → A4 PNG` — so encoding and decoding need **no trained artifacts** and recover the **exact original text, byte-for-byte**.
+
+```bash
+# Encode any text into printable A4 color-barcode page(s)
+tox -e encode_lossless -- --text "The exact bytes of this sentence are recoverable."
+tox -e encode_lossless -- --input-path reports/austen_pride.txt --output-path reports/figures/austen.png
+```
+
+**Arguments**:
+- `--text`: Inline document text (takes precedence over `--input-path`)
+- `--input-path`: UTF-8 text file read whole as one document
+- `--output-path`: Output PNG path; multi-page runs insert `_p01`, `_p02`, … before the extension (default: `reports/figures/document_exact.png`)
+- `--dpi`: Output resolution; A4 pixel size scales with DPI (default: 300)
+- `--cell-size`: Pixels per module; smaller is denser (fewer pages) but less print-robust (default: 4)
+
+A document larger than one A4 page is split across the **minimal number of pages**; each page self-describes its `(page_index, page_count)` and carries a CRC32, so the pages decode correctly **in any order** and a missing, duplicated, or corrupted page raises rather than returning wrong text.
+
+```bash
+# Decode page(s) back to the exact source text (single path, comma-list, or glob)
+tox -e decode_lossless -- --input-paths "reports/figures/document_exact.png"
+tox -e decode_lossless -- --input-paths "reports/figures/austen_p*.png" --output-path reports/austen_recovered.txt
+```
+
+**Arguments**:
+- `--input-paths`: One path, a comma-separated list, or a glob of the page PNGs (default: `reports/figures/document_exact.png`)
+- `--output-path`: Write the recovered text here; omit to echo it to stdout (default: none)
+- `--cell-size`: Pixels per module; must match the value used to encode (default: 4)
+
+Losslessness holds for the **digital round-trip** (PNG in, PNG out): PNG is a lossless container and a Pillow `"P"` (palette) image stores each pixel as a 1-byte index into the embedded `PLTE` palette, so the index *is* the byte — there is no `Lab → RGB → Lab` clipping. Print-then-scan robustness (fiducials, color calibration, Reed–Solomon ECC) is out of scope for v1.
+
 ### Query by Color Palette
 
 Retrieve documents matching a specified color distribution:

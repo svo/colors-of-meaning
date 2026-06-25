@@ -1,6 +1,11 @@
 import pytest
 
-from colors_of_meaning.domain.service.cell_geometry import cell_center, tile_canvas, tile_grid
+from colors_of_meaning.domain.service.cell_geometry import (
+    a4_canvas_pixels,
+    cell_center,
+    tile_canvas,
+    tile_grid,
+)
 
 
 class TestTileGrid:
@@ -60,3 +65,15 @@ class TestTileCanvas:
 class TestCellCenter:
     def test_should_return_geometric_center_of_box(self) -> None:
         assert cell_center((0, 0, 10, 20)) == (5, 10)
+
+
+class TestA4CanvasPixels:
+    def test_should_return_exact_a4_dimensions_at_300_dpi(self) -> None:
+        assert a4_canvas_pixels(300) == (2480, 3508)
+
+    def test_should_scale_dimensions_with_dpi(self) -> None:
+        assert a4_canvas_pixels(72) == (595, 842)
+
+    def test_should_reject_non_positive_dpi(self) -> None:
+        with pytest.raises(ValueError, match="dpi must be positive"):
+            a4_canvas_pixels(0)

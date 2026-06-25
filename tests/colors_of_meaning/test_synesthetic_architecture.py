@@ -58,8 +58,51 @@ def test_should_use_application_use_case_in_cli() -> None:
             "colors_of_meaning.interface.cli.ablate",
             "colors_of_meaning.interface.cli.encode_image",
             "colors_of_meaning.interface.cli.decode_image",
+            "colors_of_meaning.interface.cli.encode_lossless",
+            "colors_of_meaning.interface.cli.decode_lossless",
         )
         .should_import("colors_of_meaning.application.use_case.*")
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_keep_pillow_out_of_domain_data_modules() -> None:
+    (
+        archrule(
+            "Domain Data Module Imaging Isolation",
+            comment="The lossless codec port and payload framing must stay free of the Pillow imaging dependency",
+        )
+        .match(
+            "colors_of_meaning.domain.service.data_payload",
+            "colors_of_meaning.domain.service.data_image_codec",
+        )
+        .should(
+            lambda module, direct_imports, all_imports: not any(
+                imported == "PIL" or imported.startswith("PIL.") for imported in direct_imports
+            ),
+            "no_pillow_import",
+        )
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_keep_the_lossless_codec_model_free() -> None:
+    (
+        archrule(
+            "Lossless Codec Model-Free",
+            comment="The lossless codec must not depend on the projector, embeddings, or the semantic Lab codebook",
+        )
+        .match(
+            "colors_of_meaning.infrastructure.visualization.pillow_data_image_codec",
+            "colors_of_meaning.domain.service.data_image_codec",
+            "colors_of_meaning.domain.service.data_payload",
+        )
+        .should_not_import(
+            "colors_of_meaning.infrastructure.ml.*",
+            "colors_of_meaning.infrastructure.embedding.*",
+            "colors_of_meaning.infrastructure.persistence.*",
+            "colors_of_meaning.domain.model.color_codebook",
+        )
         .check("colors_of_meaning")
     )
 
