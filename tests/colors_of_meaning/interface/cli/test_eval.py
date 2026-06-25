@@ -4,7 +4,15 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from colors_of_meaning.interface.cli.eval import EvalArgs, main, _create_color_classifier
+from colors_of_meaning.interface.cli.eval import (
+    DEFAULT_SINKHORN_REG,
+    EvalArgs,
+    main,
+    _create_color_classifier,
+    _create_distance_calculator,
+    _resolve_max_samples,
+    _resolved_sinkhorn_reg,
+)
 
 
 def _run_color_classifier_with_mocked_factory(mapper_type: str) -> tuple:
@@ -190,7 +198,6 @@ class TestEvalCLI:
 
         main(args)
 
-        # Verify recall@k was printed
         print_calls = [str(call) for call in mock_print.call_args_list]
         assert any("Recall@1" in str(call) for call in print_calls)
         assert any("Recall@5" in str(call) for call in print_calls)
@@ -279,9 +286,7 @@ class TestEvalCLI:
         mock_distance_calc_class.assert_called_once_with(
             codebook=mock_codebook, sinkhorn_reg=mock_config.distance.sinkhorn_reg
         )
-        # Verify bits_per_token was passed
         assert mock_use_case.execute.call_args[1]["bits_per_token"] == 12.0
-        # Verify bits_per_token was printed
         print_calls = [str(call) for call in mock_print.call_args_list]
         assert any("Bits per token" in str(call) for call in print_calls)
 
@@ -318,7 +323,6 @@ class TestEvalCLI:
         mock_color_mapper = Mock()
         mock_create_color_mapper.return_value = mock_color_mapper
 
-        # Mock codebook repository to return None
         mock_codebook_repo = Mock()
         mock_codebook_repo.load.return_value = None
         mock_codebook_repo_class.return_value = mock_codebook_repo
@@ -348,7 +352,6 @@ class TestEvalCLI:
         config_path = tmp_path / "config.yaml"
         config_path.write_text("dummy")
 
-        # Create args with invalid method by bypassing the Literal type
         args = EvalArgs(config=str(config_path), dataset="ag_news")
         args.method = "invalid_method"  # type: ignore
 
@@ -406,6 +409,64 @@ class TestEvalCLI:
         main(args)
 
         mock_use_case.execute.assert_called_once()
-        # Verify HNSW was used
         mock_classifier_class.assert_called_once()
         assert mock_classifier_class.call_args[1]["k"] == 3
+
+
+class TestEvalDistanceSelection:
+    def test_should_default_distance_to_wasserstein(self) -> None:
+        assert EvalArgs().distance == "wasserstein"
+
+    def test_should_create_exact_wasserstein_calculator_when_distance_is_wasserstein(self) -> None:
+        with patch("colors_of_meaning.interface.cli.eval.WassersteinDistanceCalculator") as calculator_class:
+            calculator = _create_distance_calculator("wasserstein", Mock(), Mock())
+
+        assert calculator is calculator_class.return_value
+
+    def test_should_create_sliced_calculator_when_distance_is_sliced(self) -> None:
+        with patch("colors_of_meaning.interface.cli.eval.SlicedWassersteinDistanceCalculator") as calculator_class:
+            calculator = _create_distance_calculator("sliced", Mock(), Mock())
+
+        assert calculator is calculator_class.return_value
+
+    def test_should_create_jensen_shannon_calculator_when_distance_is_jensen_shannon(self) -> None:
+        with patch("colors_of_meaning.interface.cli.eval.JensenShannonDistanceCalculator") as calculator_class:
+            calculator = _create_distance_calculator("jensen_shannon", Mock(), Mock())
+
+        assert calculator is calculator_class.return_value
+
+    def test_should_use_entropic_regularisation_when_distance_is_sinkhorn(self) -> None:
+        config = Mock()
+        config.distance.sinkhorn_reg = None
+        with patch("colors_of_meaning.interface.cli.eval.WassersteinDistanceCalculator") as calculator_class:
+            _create_distance_calculator("sinkhorn", Mock(), config)
+
+        assert calculator_class.call_args[1]["sinkhorn_reg"] == DEFAULT_SINKHORN_REG
+
+    def test_should_raise_value_error_when_distance_is_unknown(self) -> None:
+        with pytest.raises(ValueError, match="Unknown distance"):
+            _create_distance_calculator("unknown", Mock(), Mock())
+
+    def test_should_default_sinkhorn_reg_when_config_value_is_absent(self) -> None:
+        config = Mock()
+        config.distance.sinkhorn_reg = None
+
+        assert _resolved_sinkhorn_reg(config) == DEFAULT_SINKHORN_REG
+
+    def test_should_keep_config_sinkhorn_reg_when_present(self) -> None:
+        config = Mock()
+        config.distance.sinkhorn_reg = 0.25
+
+        assert _resolved_sinkhorn_reg(config) == 0.25
+
+    def test_should_override_max_samples_when_argument_is_provided(self) -> None:
+        config = Mock()
+        config.dataset.max_samples = 400
+
+        assert _resolve_max_samples(EvalArgs(max_samples=2000), config) == 2000
+
+    def test_should_fall_back_to_config_max_samples_when_not_overridden(self) -> None:
+        config = Mock()
+        config.dataset.max_samples = 400
+
+        assert _resolve_max_samples(EvalArgs(), config) == 400

@@ -1,8 +1,10 @@
 import tyro
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Optional
 
 from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
+from colors_of_meaning.domain.model.color_codebook import ColorCodebook
+from colors_of_meaning.domain.service.distance_calculator import DistanceCalculator
 from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter import (
     SentenceEmbeddingAdapter,
 )
@@ -12,6 +14,12 @@ from colors_of_meaning.infrastructure.persistence.file_color_codebook_repository
 )
 from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import (
     WassersteinDistanceCalculator,
+)
+from colors_of_meaning.infrastructure.ml.sliced_wasserstein_distance_calculator import (
+    SlicedWassersteinDistanceCalculator,
+)
+from colors_of_meaning.infrastructure.ml.jensen_shannon_distance_calculator import (
+    JensenShannonDistanceCalculator,
 )
 from colors_of_meaning.infrastructure.dataset.ag_news_dataset_adapter import (
     AGNewsDatasetAdapter,
@@ -43,16 +51,21 @@ from colors_of_meaning.application.use_case.evaluate_use_case import (
 from colors_of_meaning.domain.model.evaluation_result import EvaluationResult
 from colors_of_meaning.domain.repository.dataset_repository import DatasetRepository
 
+DistanceChoice = Literal["wasserstein", "sliced", "sinkhorn", "jensen_shannon"]
+DEFAULT_SINKHORN_REG = 1.0
+
 
 @dataclass
 class EvalArgs:
     config: str = "configs/base.yaml"
     dataset: Literal["ag_news", "imdb", "newsgroups"] = "ag_news"
     method: Literal["color", "tfidf", "hnsw"] = "color"
+    distance: DistanceChoice = "wasserstein"
     model_path: str = "artifacts/models/projector.pth"
     codebook_path: str = "codebook_4096"
     k_neighbors: int = 5
     mapper_type: str = "unconstrained"
+    max_samples: Optional[int] = None
 
 
 def _setup_dataset(dataset_name: str) -> DatasetRepository:
@@ -64,6 +77,24 @@ def _setup_dataset(dataset_name: str) -> DatasetRepository:
     adapter_class, message = dataset_adapters[dataset_name]
     print(message)
     return adapter_class()
+
+
+def _create_distance_calculator(
+    distance: str, codebook: ColorCodebook, config: SynestheticConfig
+) -> DistanceCalculator:
+    if distance == "wasserstein":
+        return WassersteinDistanceCalculator(codebook=codebook, sinkhorn_reg=config.distance.sinkhorn_reg)
+    if distance == "sliced":
+        return SlicedWassersteinDistanceCalculator(codebook=codebook, seed=config.training.seed)
+    if distance == "sinkhorn":
+        return WassersteinDistanceCalculator(codebook=codebook, sinkhorn_reg=_resolved_sinkhorn_reg(config))
+    if distance == "jensen_shannon":
+        return JensenShannonDistanceCalculator(smoothing_epsilon=config.distance.smoothing_epsilon)
+    raise ValueError(f"Unknown distance: {distance}")
+
+
+def _resolved_sinkhorn_reg(config: SynestheticConfig) -> float:
+    return config.distance.sinkhorn_reg if config.distance.sinkhorn_reg else DEFAULT_SINKHORN_REG
 
 
 def _create_color_classifier(args: EvalArgs, config: SynestheticConfig) -> tuple:
@@ -78,7 +109,7 @@ def _create_color_classifier(args: EvalArgs, config: SynestheticConfig) -> tuple
         raise FileNotFoundError(f"Codebook not found at {args.codebook_path}")
     quantized_mapper = QuantizedColorMapper(color_mapper, codebook)
     encode_use_case = EncodeDocumentUseCase(quantized_mapper)
-    distance_calculator = WassersteinDistanceCalculator(codebook=codebook, sinkhorn_reg=config.distance.sinkhorn_reg)
+    distance_calculator = _create_distance_calculator(args.distance, codebook, config)
     classifier = ColorHistogramClassifier(embedding_adapter, encode_use_case, distance_calculator, k=args.k_neighbors)
     return classifier, 12.0
 
@@ -100,6 +131,8 @@ def _print_results(args: EvalArgs, result: EvaluationResult) -> None:
     print("\n=== Evaluation Results ===")
     print(f"Dataset: {args.dataset}")
     print(f"Method: {args.method}")
+    if args.method == "color":
+        print(f"Distance: {args.distance}")
     print(f"Accuracy: {result.accuracy:.4f}")
     print(f"Macro F1: {result.macro_f1:.4f}")
     print(f"MRR: {result.mrr:.4f}")
@@ -110,12 +143,18 @@ def _print_results(args: EvalArgs, result: EvaluationResult) -> None:
         print(f"Bits per token: {result.bits_per_token:.2f}")
 
 
+def _resolve_max_samples(args: EvalArgs, config: SynestheticConfig) -> Optional[int]:
+    if args.max_samples is not None:
+        return args.max_samples
+    return config.dataset.max_samples if hasattr(config.dataset, "max_samples") else None
+
+
 def main(args: EvalArgs) -> None:
     config = SynestheticConfig.from_yaml(args.config)
     dataset_repo = _setup_dataset(args.dataset)
     classifier, bits_per_token = _create_classifier(args, config)
     evaluate_use_case = EvaluateUseCase(classifier, SklearnMetricsCalculator(), dataset_repo)
-    max_samples = config.dataset.max_samples if hasattr(config.dataset, "max_samples") else None
+    max_samples = _resolve_max_samples(args, config)
     limit_msg = f" (limited to {max_samples} samples per split)" if max_samples else ""
     print(f"Evaluating on {args.dataset} with {args.method} method{limit_msg}...")
     result = evaluate_use_case.execute(

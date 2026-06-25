@@ -24,6 +24,7 @@ class NewsgroupsDatasetAdapter(DatasetRepository):
         samples = [
             EvaluationSample(text=text, label=int(label), split=split)
             for text, label in zip(newsgroups.data, newsgroups.target)
+            if text.strip()
         ]
 
         return seeded_subsample(samples, max_samples, seed)

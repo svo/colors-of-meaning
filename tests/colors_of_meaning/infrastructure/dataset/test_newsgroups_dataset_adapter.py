@@ -20,6 +20,20 @@ class TestNewsgroupsDatasetAdapter:
         assert len(result) == 2
 
     @patch("colors_of_meaning.infrastructure.dataset.newsgroups_dataset_adapter.fetch_20newsgroups")
+    def test_should_skip_documents_that_are_empty_after_cleaning(self, mock_fetch: Mock) -> None:
+        mock_newsgroups = SimpleNamespace(
+            data=["Article about space", "", "   \n  ", "Article about religion"],
+            target=[0, 1, 2, 3],
+            target_names=["a", "b", "c", "d"],
+        )
+        mock_fetch.return_value = mock_newsgroups
+
+        adapter = NewsgroupsDatasetAdapter()
+        result = adapter.get_samples("train")
+
+        assert len(result) == 2
+
+    @patch("colors_of_meaning.infrastructure.dataset.newsgroups_dataset_adapter.fetch_20newsgroups")
     def test_should_limit_samples_with_max_samples(self, mock_fetch: Mock) -> None:
         mock_newsgroups = SimpleNamespace(
             data=["Article about space", "Article about religion"],

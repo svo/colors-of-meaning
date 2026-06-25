@@ -1,0 +1,32 @@
+projector:
+  embedding_dim: 384
+  hidden_dim_1: 128
+  hidden_dim_2: 64
+  output_dim: 3
+  dropout_rate: 0.1
+
+codebook:
+  bins_per_dimension: 16
+  num_bins: 4096
+
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  epochs: 100
+  seed: 42
+  device: cpu
+
+distance:
+  metric: sliced
+  smoothing_epsilon: 1.0e-8
+  sinkhorn_reg: null
+
+dataset:
+  name: newsgroups
+  train_split: train
+  test_split: test
+  max_samples: 4000
+
+supervised_mapper:
+  classification_weight: 0.1
+  num_classes: 20

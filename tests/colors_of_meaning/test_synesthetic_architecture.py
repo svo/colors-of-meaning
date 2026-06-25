@@ -56,6 +56,8 @@ def test_should_use_application_use_case_in_cli() -> None:
             "colors_of_meaning.interface.cli.compress",
             "colors_of_meaning.interface.cli.query",
             "colors_of_meaning.interface.cli.ablate",
+            "colors_of_meaning.interface.cli.eval",
+            "colors_of_meaning.interface.cli.eval_suite",
             "colors_of_meaning.interface.cli.encode_image",
             "colors_of_meaning.interface.cli.decode_image",
             "colors_of_meaning.interface.cli.encode_lossless",
@@ -174,6 +176,45 @@ def test_should_confine_cosine_histogram_calculator_scipy_to_infrastructure() ->
         )
         .match("colors_of_meaning.infrastructure.ml.cosine_histogram_distance_calculator")
         .should_import("scipy.spatial.distance")
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_keep_optimal_transport_dependency_out_of_domain() -> None:
+    (
+        archrule(
+            "Domain Optimal Transport Isolation",
+            comment="The POT optimal-transport dependency must stay out of the domain layer",
+        )
+        .match("colors_of_meaning.domain.*")
+        .should_not_import(
+            "ot",
+            "ot.*",
+        )
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_confine_sliced_wasserstein_optimal_transport_to_infrastructure() -> None:
+    (
+        archrule(
+            "Sliced Wasserstein Calculator Infrastructure",
+            comment="The sliced-Wasserstein proxy lives in infrastructure and may depend on POT",
+        )
+        .match("colors_of_meaning.infrastructure.ml.sliced_wasserstein_distance_calculator")
+        .should_import("ot")
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_confine_spearman_rank_correlation_scipy_to_infrastructure() -> None:
+    (
+        archrule(
+            "Spearman Rank Correlation Infrastructure",
+            comment="The scipy-backed rank-correlation calculator lives in infrastructure and may depend on scipy",
+        )
+        .match("colors_of_meaning.infrastructure.evaluation.spearman_rank_correlation_calculator")
+        .should_import("scipy.stats")
         .check("colors_of_meaning")
     )
 

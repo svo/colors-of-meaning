@@ -34,6 +34,12 @@ The core idea is to map semantic embeddings into perceptual color space (CIE Lab
 | HNSW Baseline | 91.99% | 91.97% | Full test set, semantic embeddings + k-NN |
 | Color Method | 81.25% | 81.22% | Supervised mapper, [`configs/agnews_run.yaml`](configs/agnews_run.yaml) — see below |
 
+The headline Color Method figure above is a **400-sample** AG News budget (exact
+Earth-Mover re-rank). For the **scaled, multi-dataset** numbers — AG News at a large
+budget plus **IMDB** and **20 Newsgroups** — produced with a fidelity-gated fast
+distance, see [Scaled, multi-dataset evaluation](#scaled-multi-dataset-evaluation) and
+the committed [`reports/eval_results.md`](reports/eval_results.md).
+
 The TF-IDF and HNSW rows are the published full-test-set baselines. The **Color
 Method** figure is produced end-to-end on AG News by a committed run configuration
 ([`configs/agnews_run.yaml`](configs/agnews_run.yaml)): the supervised color mapper,
@@ -100,6 +106,75 @@ versions, expect drift of up to ~±1 percentage point on Accuracy / Macro-F1 and
 on the Spearman correlation; for stricter cross-run guarantees add `--deterministic` to
 the train command (`torch.use_deterministic_algorithms(True)`). The committed run
 config and these tolerances are version-controlled so the figure stays attributable.
+
+### Scaled, multi-dataset evaluation
+
+The 400-sample headline rests on the **exact** Earth-Mover re-rank
+(`ot.emd2` over the 4,096×4,096 perceptual Lab cost matrix, ~92 ms/call), so a full
+test set is hours of compute. To report **honest numbers at scale and across
+datasets**, the color histogram classifier can re-rank candidates with a fast,
+**metric** proxy — **sliced-Wasserstein** over the same fixed Lab support
+(`--distance sliced`) — that orders documents almost identically to exact EMD at a
+fraction of the cost.
+
+The speed-up is **measured, not assumed**. Before any scaled number is trusted, a
+**fidelity gate** compares the proxy against exact EMD on held-out document pairs and
+**fails loudly** unless:
+
+- Spearman rank-correlation of the proxy vs exact distances is **≥ 0.95**, and
+- the downstream accuracy delta is **≤ 1.0 point**.
+
+A single command runs the gate, then evaluates each (dataset, budget) cell, and writes
+the committed evidence to [`reports/eval_results.md`](reports/eval_results.md) — one row
+per cell with accuracy, macro-F1, budget, distance, and wall-clock:
+
+```bash
+tox -e eval_suite -- \
+  --datasets ag_news imdb newsgroups \
+  --distance sliced \
+  --budgets 4000 600 600 \
+  --config configs/agnews_full.yaml \
+  --mapper-type unconstrained
+```
+
+`--budgets` records one budget per dataset (AG News at the ≥4,000 headline scale; the
+longer IMDB/20 Newsgroups documents at a smaller, recorded budget). Omit it for a
+uniform `--budget`. The committed `projector.pth` is the AG-News-trained projector;
+its forward pass is identical whether loaded as `unconstrained` or `supervised`, so the
+mapper-type label does not change the colors.
+
+The committed [`reports/eval_results.md`](reports/eval_results.md) is the auditable
+source for the AG News (large-budget), **IMDB** (binary sentiment), and **20
+Newsgroups** (20-class topic) color-method numbers and the exact command that produced
+them. Each cell records its **budget** so a large-budget number is never confused with
+the 400-sample headline, and the run is deterministic given a fixed seed (`training.seed`,
+fixed sliced-projection seed, single-thread HNSW build). The `eval` CLI also accepts
+`--distance {wasserstein,sliced,sinkhorn,jensen_shannon}` and `--max-samples` for a
+single dataset.
+
+**Fidelity gate (sliced proxy vs exact EMD):** Spearman **0.9916** over 1,200 held-out
+AG News document pairs (≥ 0.95 ✓), accuracy delta **0.0 pt** (≤ 1.0 ✓) — measured as
+`color`/`sliced` vs `color`/`wasserstein` at the 400-sample budget, both **81.25%**. The
+sliced proxy is ~200× faster than exact EMD on these sparse histograms (restricted to the
+union of each pair's non-zero bins), so scaling becomes feasible without changing the
+ranking.
+
+**Committed color-method results** (sliced proxy, from `reports/eval_results.md`):
+
+| Dataset | Classes | Budget | Accuracy | Macro F1 |
+|---------|---------|--------|----------|----------|
+| AG News | 4 | 4,000 | 81.75% | 81.78% |
+| IMDB | 2 | 600 | 54.83% | 54.78% |
+| 20 Newsgroups | 20 | 600 | 16.50% | 15.35% |
+
+These are **honest cross-dataset numbers**, not cherry-picked. The projector is trained on
+AG News, so the color mapping captures topic semantics: at 4,000 samples AG News holds
+**81.75%** (in line with — slightly above — the 400-sample 81.25% headline), confirming the
+method scales. The same fixed projector transfers **weakly** to IMDB sentiment (54.8%, just
+above the 50% binary chance — topic-trained colors do not encode sentiment) and **modestly**
+to 20 Newsgroups (16.5%, ~3.3× the 5% 20-class chance). Per-dataset retraining of the
+projector is future work; these rows document the out-of-the-box generalization of an
+AG-News-trained color map.
 
 ### Project Status
 
