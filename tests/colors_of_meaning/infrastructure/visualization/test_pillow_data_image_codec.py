@@ -7,6 +7,7 @@ import pytest
 from PIL import Image
 
 from colors_of_meaning.domain.service.cell_geometry import a4_canvas_pixels, cell_center, tile_grid
+from colors_of_meaning.domain.service.data_payload import HEADER_SIZE, compress_text, frame_page
 from colors_of_meaning.infrastructure.visualization.pillow_data_image_codec import (
     DATA_PALETTE,
     PillowDataImageCodec,
@@ -14,6 +15,7 @@ from colors_of_meaning.infrastructure.visualization.pillow_data_image_codec impo
 
 BOOK_PATH = Path(__file__).resolve().parents[4] / "reports" / "austen_pride.txt"
 MULTI_PAGE_TEXT = "".join(f"entry {index}: the quick brown fox jumps over {index} lazy dogs.\n" for index in range(80))
+MULTI_PAGE_CELL_SIZE = 35
 
 
 @pytest.fixture
@@ -27,15 +29,13 @@ def _round_trip(codec: PillowDataImageCodec, text: str, tmp_path: Path, dpi: int
     return codec.decode(paths)
 
 
-def _corrupt_payload_cell(path: str, codec: PillowDataImageCodec, cell_index: int) -> None:
+def _corrupt_payload_column(path: str, codec: PillowDataImageCodec) -> None:
     with Image.open(path) as opened:
         indices = np.array(opened)
     columns = indices.shape[1] // codec.cell_size
-    rows = indices.shape[0] // codec.cell_size
-    left, top, right, bottom = tile_grid(indices.shape[1], indices.shape[0], columns, rows)[cell_index]
-    center_x, center_y = cell_center((left, top, right, bottom))
-    indices[top:bottom, left:right] = (int(indices[center_y, center_x]) + 1) % 256
-    corrupted = Image.fromarray(indices, mode="P")
+    left, _, right, _ = tile_grid(indices.shape[1], indices.shape[0], columns, 1)[HEADER_SIZE]
+    indices[:, left:right] = (indices[:, left:right].astype(int) + 1) % 256
+    corrupted = Image.fromarray(indices.astype(np.uint8), mode="P")
     corrupted.putpalette(DATA_PALETTE)
     corrupted.save(path, format="PNG")
 
@@ -110,7 +110,7 @@ class TestDeterminism:
 
 class TestMultiPage:
     def test_should_split_into_minimal_pnn_suffixed_pages(self, tmp_path: Path) -> None:
-        codec = PillowDataImageCodec(cell_size=100)
+        codec = PillowDataImageCodec(cell_size=MULTI_PAGE_CELL_SIZE)
         output_path = str(tmp_path / "doc.png")
 
         paths = codec.encode(MULTI_PAGE_TEXT, output_path, dpi=72)
@@ -118,7 +118,7 @@ class TestMultiPage:
         assert len(paths) > 1 and paths[0].endswith("_p01.png")
 
     def test_should_recover_exact_text_from_shuffled_pages(self, tmp_path: Path) -> None:
-        codec = PillowDataImageCodec(cell_size=100)
+        codec = PillowDataImageCodec(cell_size=MULTI_PAGE_CELL_SIZE)
         paths = codec.encode(MULTI_PAGE_TEXT, str(tmp_path / "doc.png"), dpi=72)
         shuffled: List[str] = list(paths)
         random.Random(0).shuffle(shuffled)
@@ -143,16 +143,44 @@ class TestWholeBook:
         assert _round_trip(codec, text, tmp_path) == text
 
 
+class TestFullCanvas:
+    def test_should_size_the_grid_to_the_content_not_the_full_page(
+        self, codec: PillowDataImageCodec, tmp_path: Path
+    ) -> None:
+        text = "a short document that needs only a few rows of cells"
+        output_path = str(tmp_path / "short.png")
+        codec.encode(text, output_path, dpi=72)
+        columns = a4_canvas_pixels(72)[0] // codec.cell_size
+        expected_rows = -(-len(frame_page(compress_text(text), 0, 1)) // columns)
+
+        with Image.open(output_path) as opened:
+            recovered_rows = codec._recover_rows(np.asarray(opened), columns)
+        assert recovered_rows == expected_rows
+
+    def test_should_leave_no_flat_padding_band_at_the_bottom(self, tmp_path: Path) -> None:
+        codec = PillowDataImageCodec(cell_size=MULTI_PAGE_CELL_SIZE)
+        text = "".join(f"line {index} carries enough varied content to span many cell rows.\n" for index in range(12))
+        output_path = str(tmp_path / "fill.png")
+        codec.encode(text, output_path, dpi=72)
+
+        with Image.open(output_path) as opened:
+            indices = np.asarray(opened)
+        columns = indices.shape[1] // codec.cell_size
+        centers = [cell_center(box)[0] for box in tile_grid(indices.shape[1], indices.shape[0], columns, 1)]
+        bottom_band = {int(indices[indices.shape[0] - 1, center]) for center in centers}
+        assert len(bottom_band) > 1
+
+
 class TestFailureModes:
     def test_should_raise_when_a_page_is_missing(self, tmp_path: Path) -> None:
-        codec = PillowDataImageCodec(cell_size=100)
+        codec = PillowDataImageCodec(cell_size=MULTI_PAGE_CELL_SIZE)
         paths = codec.encode(MULTI_PAGE_TEXT, str(tmp_path / "doc.png"), dpi=72)
 
         with pytest.raises(ValueError):
             codec.decode([paths[0]])
 
     def test_should_raise_when_a_page_is_duplicated(self, tmp_path: Path) -> None:
-        codec = PillowDataImageCodec(cell_size=100)
+        codec = PillowDataImageCodec(cell_size=MULTI_PAGE_CELL_SIZE)
         paths = codec.encode(MULTI_PAGE_TEXT, str(tmp_path / "doc.png"), dpi=72)
 
         with pytest.raises(ValueError, match="duplicate page index"):
@@ -161,7 +189,7 @@ class TestFailureModes:
     def test_should_raise_when_a_payload_cell_is_corrupted(self, codec: PillowDataImageCodec, tmp_path: Path) -> None:
         output_path = str(tmp_path / "page.png")
         codec.encode("corruption must be detected, not silently decoded", output_path, dpi=72)
-        _corrupt_payload_cell(output_path, codec, cell_index=17)
+        _corrupt_payload_column(output_path, codec)
 
         with pytest.raises(ValueError, match="CRC32"):
             codec.decode([output_path])
@@ -172,14 +200,14 @@ class TestCapacityGuards:
         with pytest.raises(ValueError, match="cell_size must be positive"):
             PillowDataImageCodec(cell_size=0)
 
-    def test_should_raise_when_cell_size_leaves_no_capacity(self, tmp_path: Path) -> None:
+    def test_should_raise_when_cell_size_leaves_too_few_columns_for_the_header(self, tmp_path: Path) -> None:
         codec = PillowDataImageCodec(cell_size=2000)
 
-        with pytest.raises(ValueError, match="no payload capacity"):
+        with pytest.raises(ValueError, match="the header needs at least"):
             codec.encode("anything", str(tmp_path / "page.png"), dpi=72)
 
     def test_should_raise_when_the_document_exceeds_the_page_cap(self, tmp_path: Path) -> None:
-        codec = PillowDataImageCodec(cell_size=100, max_pages=1)
+        codec = PillowDataImageCodec(cell_size=MULTI_PAGE_CELL_SIZE, max_pages=1)
 
         with pytest.raises(ValueError, match="exceeding the cap"):
             codec.encode(MULTI_PAGE_TEXT, str(tmp_path / "doc.png"), dpi=72)

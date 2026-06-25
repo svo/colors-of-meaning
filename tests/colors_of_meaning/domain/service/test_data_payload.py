@@ -10,6 +10,7 @@ from colors_of_meaning.domain.service.data_payload import (
     decompress_text,
     frame_page,
     parse_page,
+    payload_length,
     reassemble,
     split_into_pages,
 )
@@ -52,6 +53,11 @@ class TestFraming:
     def test_should_raise_when_page_count_exceeds_the_wire_format_limit(self) -> None:
         with pytest.raises(ValueError, match="wire-format limit"):
             frame_page(b"x", page_index=0, page_count=70000)
+
+    def test_should_read_payload_length_from_the_header_alone(self) -> None:
+        header = frame_page(b"abcdef", page_index=0, page_count=1)[:HEADER_SIZE]
+
+        assert payload_length(header) == 6
 
     def test_should_raise_when_magic_is_unrecognized(self) -> None:
         framed = b"XXXX" + frame_page(b"x", 0, 1)[4:]

@@ -43,6 +43,10 @@ def parse_page(framed: bytes) -> Page:
     return Page(page_index, page_count, payload)
 
 
+def payload_length(framed: bytes) -> int:
+    return _parse_header(framed)[2]
+
+
 def _parse_header(framed: bytes) -> Tuple[int, int, int, int]:
     if len(framed) < HEADER_SIZE:
         raise ValueError("page frame is shorter than the header")

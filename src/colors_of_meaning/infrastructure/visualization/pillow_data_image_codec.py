@@ -1,5 +1,6 @@
 import colorsys
 import os
+from math import ceil
 from typing import List, Tuple
 
 import numpy as np
@@ -13,6 +14,7 @@ from colors_of_meaning.domain.service.data_payload import (
     compress_text,
     decompress_text,
     frame_page,
+    payload_length,
     reassemble,
     split_into_pages,
 )
@@ -47,15 +49,15 @@ class PillowDataImageCodec(DataImageCodec):
         self.max_pages = max_pages
 
     def encode(self, text: str, output_path: str, dpi: int) -> List[str]:
-        grid_shape = self._grid_shape(dpi)
-        capacity = grid_shape[0] * grid_shape[1] - HEADER_SIZE
+        columns, max_rows, width, height = self._grid_shape(dpi)
+        capacity = columns * max_rows - HEADER_SIZE
         chunks = split_into_pages(compress_text(text), capacity)
         page_count = len(chunks)
         if page_count > self.max_pages:
             raise ValueError(f"document needs {page_count} pages, exceeding the cap of {self.max_pages}")
         paths = _page_paths(output_path, page_count)
         for index, (chunk, path) in enumerate(zip(chunks, paths)):
-            self._paint_page(frame_page(chunk, index, page_count), grid_shape, path, dpi)
+            self._paint_page(frame_page(chunk, index, page_count), columns, width, height, path, dpi)
         return paths
 
     def decode(self, input_paths: List[str]) -> str:
@@ -65,13 +67,15 @@ class PillowDataImageCodec(DataImageCodec):
     def _grid_shape(self, dpi: int) -> GridShape:
         width, height = a4_canvas_pixels(dpi)
         columns = width // self.cell_size
-        rows = height // self.cell_size
-        if columns * rows <= HEADER_SIZE:
-            raise ValueError(f"cell_size {self.cell_size} leaves no payload capacity at {dpi} dpi")
-        return (columns, rows, width, height)
+        max_rows = height // self.cell_size
+        if columns < HEADER_SIZE:
+            raise ValueError(
+                f"cell_size {self.cell_size} leaves {columns} columns; the header needs at least {HEADER_SIZE}"
+            )
+        return (columns, max_rows, width, height)
 
-    def _paint_page(self, framed: bytes, grid_shape: GridShape, path: str, dpi: int) -> None:
-        columns, rows, width, height = grid_shape
+    def _paint_page(self, framed: bytes, columns: int, width: int, height: int, path: str, dpi: int) -> None:
+        rows = ceil(len(framed) / columns)
         padded = framed + bytes(columns * rows - len(framed))
         grid = Image.frombytes("P", (columns, rows), padded)
         grid.putpalette(DATA_PALETTE)
@@ -84,8 +88,12 @@ class PillowDataImageCodec(DataImageCodec):
         with Image.open(path) as opened:
             indices = np.asarray(opened)
         columns = indices.shape[1] // self.cell_size
-        rows = indices.shape[0] // self.cell_size
-        return self._sample_cells(indices, columns, rows)
+        return self._sample_cells(indices, columns, self._recover_rows(indices, columns))
+
+    def _recover_rows(self, indices: npt.NDArray, columns: int) -> int:
+        header_boxes = tile_grid(indices.shape[1], indices.shape[0], columns, 1)[:HEADER_SIZE]
+        header = bytes(int(indices[0, cell_center(box)[0]]) for box in header_boxes)
+        return ceil((HEADER_SIZE + payload_length(header)) / columns)
 
     @staticmethod
     def _sample_cells(indices: npt.NDArray, columns: int, rows: int) -> bytes:

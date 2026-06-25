@@ -404,6 +404,8 @@ tox -e encode_lossless -- --input-path reports/austen_pride.txt --output-path re
 
 A document larger than one A4 page is split across the **minimal number of pages**; each page self-describes its `(page_index, page_count)` and carries a CRC32, so the pages decode correctly **in any order** and a missing, duplicated, or corrupted page raises rather than returning wrong text.
 
+Each page **fills the whole A4 sheet**: `--cell-size` fixes the number of columns (cell width), and the rows adapt to exactly the content the page carries, so a short document stretches to the full height instead of leaving a flat padding block at the bottom. The decoder reads the page's header from its top row to recover the row count, so no extra metadata is needed.
+
 ```bash
 # Decode page(s) back to the exact source text (single path, comma-list, or glob)
 tox -e decode_lossless -- --input-paths "reports/figures/document_exact.png"
