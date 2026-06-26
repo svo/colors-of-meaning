@@ -67,6 +67,7 @@ artifacts/
 # Generated reports and figures (the committed eval results table is tracked)
 reports/*
 !reports/eval_results.md
+!reports/interpretability.md
 
 # Training data (sample data is tracked separately)
 data/train.txt

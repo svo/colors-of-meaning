@@ -220,6 +220,37 @@ The structured mapper uses explicit heads for hue (semantic clusters), lightness
 tox -e train -- --config configs/structured.yaml --mapper-type structured
 ```
 
+### Interpretability (Validated)
+
+The structured mapper is *trained toward* hue=topic-cluster, lightness=sentiment, and
+chroma=concreteness targets, so on the training split the "hue means topic, lightness
+means sentiment, chroma means concreteness" claim is true **by construction**. That is
+not yet science: a network can satisfy its training targets without the axes carrying
+that meaning on unseen data.
+
+The `interpretability` CLI makes the claim **falsifiable**. On a held-out split it measures
+three independent correlations — hue↔topic (normalized mutual information), lightness↔sentiment
+(point-biserial/Spearman), and chroma↔concreteness (Spearman over the bundled Brysbaert
+concreteness lexicon, offline) — for the structured mapper **and** for a negative control
+(an untrained noise projector, or an unconstrained mapper never trained toward these axes).
+Interpretability is asserted only where the structured mapper's **margin over the control**
+clears a documented threshold; any axis that fails is reported as a **falsification**, not a
+pass. This mirrors the structure-preservation evaluator: the numerics (`scikit-learn`/`scipy`)
+live behind a domain port (`InterpretabilityEvaluator`), so the domain layer stays pure.
+
+```bash
+# Structured mapper vs an untrained noise control on a held-out IMDB split
+tox -e interpretability -- \
+  --config configs/interpretability.yaml \
+  --dataset imdb \
+  --structured-model artifacts/models/structured_projector.pth \
+  --control noise
+```
+
+The per-axis structured/control/margin table and the VALIDATED/FALSIFIED verdict are written
+to the committed [`reports/interpretability.md`](reports/interpretability.md), regenerable from
+the command above.
+
 ### Train the Supervised Color Mapper
 
 The supervised mapper jointly optimizes color projection and classification using ground-truth labels. The classification head is discarded after training; only the projector weights are saved.

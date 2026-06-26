@@ -62,6 +62,7 @@ def test_should_use_application_use_case_in_cli() -> None:
             "colors_of_meaning.interface.cli.decode_image",
             "colors_of_meaning.interface.cli.encode_lossless",
             "colors_of_meaning.interface.cli.decode_lossless",
+            "colors_of_meaning.interface.cli.interpretability",
         )
         .should_import("colors_of_meaning.application.use_case.*")
         .check("colors_of_meaning")
@@ -203,6 +204,38 @@ def test_should_confine_sliced_wasserstein_optimal_transport_to_infrastructure()
         )
         .match("colors_of_meaning.infrastructure.ml.sliced_wasserstein_distance_calculator")
         .should_import("ot")
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_confine_interpretability_evaluator_sklearn_to_infrastructure() -> None:
+    (
+        archrule(
+            "Interpretability Evaluator Infrastructure",
+            comment="The sklearn/scipy-backed interpretability evaluator lives in infrastructure and may depend on them",
+        )
+        .match("colors_of_meaning.infrastructure.evaluation.sklearn_interpretability_evaluator")
+        .should_import("sklearn.metrics")
+        .check("colors_of_meaning")
+    )
+
+
+def test_should_keep_interpretability_numerics_out_of_domain() -> None:
+    (
+        archrule(
+            "Interpretability Domain Numerics Isolation",
+            comment="The interpretability report model and evaluator port must stay free of scipy/sklearn",
+        )
+        .match(
+            "colors_of_meaning.domain.model.interpretability_report",
+            "colors_of_meaning.domain.service.interpretability_evaluator",
+        )
+        .should_not_import(
+            "scipy",
+            "scipy.*",
+            "sklearn",
+            "sklearn.*",
+        )
         .check("colors_of_meaning")
     )
 
