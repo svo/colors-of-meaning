@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import numpy.typing as npt
 
@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 LEARNED_CODEBOOK_MODE = "learned"
 
+CheckpointSelector = Callable[[ColorMapper], Tuple[Any, float]]
+
 
 class TrainColorMappingUseCase:
     def __init__(
@@ -26,11 +28,13 @@ class TrainColorMappingUseCase:
         structure_preservation_evaluator: StructurePreservationEvaluator,
         codebook_repository: ColorCodebookRepository,
         codebook_factory: Optional[ColorCodebookFactory] = None,
+        checkpoint_selector: Optional[CheckpointSelector] = None,
     ) -> None:
         self.color_mapper = color_mapper
         self.structure_preservation_evaluator = structure_preservation_evaluator
         self.codebook_repository = codebook_repository
         self.codebook_factory = codebook_factory
+        self.checkpoint_selector = checkpoint_selector
 
     def execute(
         self,
@@ -47,13 +51,18 @@ class TrainColorMappingUseCase:
     ) -> float:
         self.color_mapper.train(embeddings=embeddings, epochs=epochs, learning_rate=learning_rate)
 
-        best_checkpoint, best_correlation = self._select_best_checkpoint(evaluation_embeddings)
+        best_checkpoint, best_score = self._choose_checkpoint(evaluation_embeddings)
         self.color_mapper.restore_checkpoint(best_checkpoint)
         self.color_mapper.save_weights(model_name)
 
         codebook = self._build_codebook(codebook_mode, bins_per_dimension, embeddings, num_bins, seed)
         self.codebook_repository.save(codebook, codebook_name)
-        return best_correlation
+        return best_score
+
+    def _choose_checkpoint(self, evaluation_embeddings: npt.NDArray) -> Tuple[Any, float]:
+        if self.checkpoint_selector is not None:
+            return self.checkpoint_selector(self.color_mapper)
+        return self._select_best_checkpoint(evaluation_embeddings)
 
     def _select_best_checkpoint(self, evaluation_embeddings: npt.NDArray) -> Tuple[Any, float]:
         checkpoints = self.color_mapper.epoch_checkpoints()

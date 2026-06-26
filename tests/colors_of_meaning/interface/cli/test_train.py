@@ -16,6 +16,9 @@ from colors_of_meaning.interface.cli.train import (
     _load_training_data,
     _load_documents_data,
     _build_document_corpus,
+    _maybe_build_validation_selector,
+    _build_validation_selector,
+    _print_selection_score,
     _configure_supervised_mapper,
     _configure_structured_mapper,
     _uses_label_sentiment,
@@ -72,6 +75,78 @@ class TestDocumentsSource:
         result = _load_training_data(TrainArgs(source="documents"), Mock())
 
         assert result == (["t"], None, None)
+
+
+class TestValidationSelection:
+    def test_should_return_no_selector_when_selecting_on_structure(self) -> None:
+        result = _maybe_build_validation_selector(
+            TrainArgs(select_on="structure"), Mock(), Mock(), np.zeros((2, 2)), np.array([0, 1])
+        )
+
+        assert result is None
+
+    def test_should_raise_when_validation_selection_lacks_documents_source(self) -> None:
+        with pytest.raises(ValueError, match="requires --source documents"):
+            _maybe_build_validation_selector(
+                TrainArgs(select_on="validation", source="dataset"), Mock(), Mock(), np.zeros((2, 2)), np.array([0, 1])
+            )
+
+    def test_should_raise_when_validation_selection_lacks_labels(self) -> None:
+        with pytest.raises(ValueError, match="requires --mapper-type supervised"):
+            _maybe_build_validation_selector(
+                TrainArgs(select_on="validation", source="documents"), Mock(), Mock(), np.zeros((2, 2)), None
+            )
+
+    @patch("colors_of_meaning.interface.cli.train._build_validation_selector")
+    def test_should_build_selector_for_valid_validation_selection(self, mock_build: Mock) -> None:
+        result = _maybe_build_validation_selector(
+            TrainArgs(select_on="validation", source="documents"), Mock(), Mock(), np.zeros((2, 2)), np.array([0, 1])
+        )
+
+        assert result is mock_build.return_value
+
+    @patch("colors_of_meaning.interface.cli.train.ValidationAccuracyCheckpointSelector")
+    @patch("colors_of_meaning.interface.cli.train.JensenShannonDistanceCalculator")
+    @patch("colors_of_meaning.interface.cli.train.EncodeDocumentUseCase")
+    @patch("colors_of_meaning.interface.cli.train.QuantizedColorMapper")
+    @patch("colors_of_meaning.interface.cli.train.ColorCodebook")
+    @patch("colors_of_meaning.interface.cli.train.SentenceEmbeddingAdapter")
+    @patch("colors_of_meaning.interface.cli.train._build_document_corpus")
+    @patch("builtins.print")
+    def test_should_construct_the_selector_from_the_validation_split(
+        self,
+        _print: Mock,
+        mock_corpus: Mock,
+        _embed: Mock,
+        _codebook: Mock,
+        _quantized: Mock,
+        _encode: Mock,
+        _distance: Mock,
+        mock_selector: Mock,
+    ) -> None:
+        mock_corpus.return_value.get_samples.return_value = [Mock(text="a", label=0), Mock(text="b", label=1)]
+        config = Mock()
+        config.training.batch_size = 8
+        config.codebook.bins_per_dimension = 2
+        config.distance.smoothing_epsilon = 1e-8
+
+        result = _build_validation_selector(
+            TrainArgs(source="documents"), config, Mock(), np.zeros((4, 2)), np.array([0, 0, 1, 1])
+        )
+
+        assert result is mock_selector.return_value
+
+    @patch("builtins.print")
+    def test_should_print_validation_accuracy_when_selecting_on_validation(self, mock_print: Mock) -> None:
+        _print_selection_score(TrainArgs(select_on="validation"), 0.42)
+
+        assert "Validation authorship accuracy" in mock_print.call_args.args[0]
+
+    @patch("builtins.print")
+    def test_should_print_structure_correlation_when_selecting_on_structure(self, mock_print: Mock) -> None:
+        _print_selection_score(TrainArgs(select_on="structure"), -0.3)
+
+        assert "Structure-preservation correlation" in mock_print.call_args.args[0]
 
 
 class TestCreateColorMapper:

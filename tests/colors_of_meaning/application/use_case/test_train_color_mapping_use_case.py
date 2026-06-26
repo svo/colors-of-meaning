@@ -143,3 +143,18 @@ class TestTrainColorMappingUseCase:
         best_correlation = _execute(use_case)
 
         assert best_correlation == -0.9
+
+    def test_should_restore_the_checkpoint_chosen_by_the_injected_selector(self) -> None:
+        mock_color_mapper = Mock()
+        selector = Mock(return_value=("chosen", 0.91))
+        use_case = TrainColorMappingUseCase(mock_color_mapper, Mock(), Mock(), checkpoint_selector=selector)
+
+        _execute(use_case)
+
+        assert mock_color_mapper.restore_checkpoint.call_args_list[-1].args[0] == "chosen"
+
+    def test_should_return_the_score_from_the_injected_selector(self) -> None:
+        selector = Mock(return_value=("chosen", 0.91))
+        use_case = TrainColorMappingUseCase(Mock(), Mock(), Mock(), checkpoint_selector=selector)
+
+        assert _execute(use_case) == 0.91
