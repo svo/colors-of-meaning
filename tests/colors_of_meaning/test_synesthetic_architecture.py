@@ -63,6 +63,7 @@ def test_should_use_application_use_case_in_cli() -> None:
             "colors_of_meaning.interface.cli.encode_lossless",
             "colors_of_meaning.interface.cli.decode_lossless",
             "colors_of_meaning.interface.cli.interpretability",
+            "colors_of_meaning.interface.cli.rate_distortion",
         )
         .should_import("colors_of_meaning.application.use_case.*")
         .check("colors_of_meaning")

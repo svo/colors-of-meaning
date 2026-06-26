@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 
@@ -10,8 +12,20 @@ from colors_of_meaning.application.use_case.compress_document_use_case import (
 from colors_of_meaning.application.use_case.encode_document_use_case import (
     EncodeDocumentUseCase,
 )
+from colors_of_meaning.application.use_case.rate_distortion_sweep_use_case import (
+    RateDistortionSweepUseCase,
+)
 from colors_of_meaning.domain.model.color_codebook import ColorCodebook
 from colors_of_meaning.domain.service.color_mapper import QuantizedColorMapper
+from colors_of_meaning.infrastructure.ml.color_vq_compression_baseline import (
+    ColorVqCompressionBaseline,
+)
+from colors_of_meaning.infrastructure.ml.gzip_compression_baseline import (
+    GzipCompressionBaseline,
+)
+from colors_of_meaning.infrastructure.ml.pq_compression_baseline import (
+    PQCompressionBaseline,
+)
 from colors_of_meaning.infrastructure.ml.pytorch_color_mapper import PyTorchColorMapper
 from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import (
     WassersteinDistanceCalculator,
@@ -288,3 +302,48 @@ class TestFullPipeline:
 
         assert compressed.compression_ratio > 0
         assert len(pairs) == 3
+
+
+@pytest.mark.integration
+class TestRateDistortionSweepPipeline:
+    def _baseline_factory(self, color_mapper: PyTorchColorMapper):  # type: ignore[no-untyped-def]
+        def build(method: str, budget: int):  # type: ignore[no-untyped-def]
+            if method == "color_vq":
+                codebook = ColorCodebook.create_uniform_grid(bins_per_dimension=budget)
+                return ColorVqCompressionBaseline(codebook=codebook, color_mapper=color_mapper)
+            if method == "pq":
+                return PQCompressionBaseline(num_subspaces=int(round(math.log2(budget))), num_centroids=8, seed=42)
+            return GzipCompressionBaseline() if budget == 2 else None
+
+        return build
+
+    def _sweep(self) -> tuple:
+        mapper = PyTorchColorMapper(input_dim=8, hidden_dim_1=16, hidden_dim_2=8, dropout_rate=0.0, device="cpu")
+        rng = np.random.default_rng(7)
+        embeddings = rng.standard_normal((40, 8)).astype(np.float32)
+        use_case = RateDistortionSweepUseCase(self._baseline_factory(mapper))
+        return use_case, embeddings
+
+    def test_should_record_a_point_for_every_color_budget(self) -> None:
+        use_case, embeddings = self._sweep()
+
+        frontier = use_case.execute(embeddings, budgets=[2, 4, 8, 16], methods=["color_vq"])
+
+        assert [point.bits_per_token for point in frontier.points] == [3.0, 6.0, 9.0, 12.0]
+
+    def test_should_match_color_vq_and_pq_at_each_budget(self) -> None:
+        use_case, embeddings = self._sweep()
+
+        frontier = use_case.execute(embeddings, budgets=[2, 4, 8, 16], methods=["color_vq", "gzip", "pq"])
+
+        assert all(
+            {point.method for point in frontier.at_budget(bits)} == {"color_vq", "pq"} for bits in [3.0, 6.0, 9.0, 12.0]
+        )
+
+    def test_should_produce_identical_points_on_repeated_runs(self) -> None:
+        use_case, embeddings = self._sweep()
+
+        first = use_case.execute(embeddings, budgets=[2, 4, 8, 16], methods=["color_vq", "gzip", "pq"])
+        second = use_case.execute(embeddings, budgets=[2, 4, 8, 16], methods=["color_vq", "gzip", "pq"])
+
+        assert first.points == second.points

@@ -4,11 +4,19 @@ from unittest.mock import Mock, patch, MagicMock
 
 import numpy as np
 
+from PIL import Image
+
 from colors_of_meaning.domain.model.lab_color import LabColor
 from colors_of_meaning.domain.model.color_codebook import ColorCodebook
 from colors_of_meaning.domain.model.colored_document import ColoredDocument
+from colors_of_meaning.domain.model.rate_distortion_point import (
+    RateDistortionFrontier,
+    RateDistortionPoint,
+)
 from colors_of_meaning.domain.service.figure_renderer import FigureRenderer
 from colors_of_meaning.infrastructure.visualization.matplotlib_figure_renderer import (
+    FIGURE_DPI,
+    RATE_DISTORTION_FIGURE_SIZE,
     MatplotlibFigureRenderer,
 )
 
@@ -692,6 +700,38 @@ class TestSelectSamplesPerClass:
         selected = MatplotlibFigureRenderer._select_samples_per_class(labels, 2, 3)
 
         assert len(selected) == 2
+
+
+class TestRenderRateDistortion:
+    def _frontier(self) -> RateDistortionFrontier:
+        return RateDistortionFrontier(
+            [
+                RateDistortionPoint("color_vq", 3.0, 5.0, 0.70),
+                RateDistortionPoint("color_vq", 12.0, 1.0, 0.85),
+                RateDistortionPoint("pq", 3.0, 0.02, None),
+                RateDistortionPoint("pq", 12.0, 0.005, None),
+                RateDistortionPoint("gzip", 48.0, 0.0, None),
+            ]
+        )
+
+    def test_should_write_a_non_empty_rate_distortion_png(self, tmp_path: Path) -> None:
+        renderer = MatplotlibFigureRenderer()
+        output_path = str(tmp_path / "rate_distortion.png")
+
+        renderer.render_rate_distortion(self._frontier(), output_path)
+
+        assert os.path.getsize(output_path) > 0
+
+    def test_should_render_rate_distortion_at_exact_uncropped_size(self, tmp_path: Path) -> None:
+        renderer = MatplotlibFigureRenderer()
+        output_path = str(tmp_path / "rate_distortion.png")
+
+        renderer.render_rate_distortion(self._frontier(), output_path)
+
+        expected = (int(RATE_DISTORTION_FIGURE_SIZE[0] * FIGURE_DPI), int(RATE_DISTORTION_FIGURE_SIZE[1] * FIGURE_DPI))
+        with Image.open(output_path) as image:
+            rendered_size = image.size
+        assert rendered_size == expected
 
 
 class TestSaveFigure:

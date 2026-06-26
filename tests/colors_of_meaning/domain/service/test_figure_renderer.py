@@ -23,6 +23,9 @@ class TestFigureRenderer:
     def test_should_define_render_corpus_signatures_method(self) -> None:
         assert hasattr(FigureRenderer, "render_corpus_signatures")
 
+    def test_should_define_render_rate_distortion_method(self) -> None:
+        assert hasattr(FigureRenderer, "render_rate_distortion")
+
     def test_should_allow_concrete_implementation(self) -> None:
         class ConcreteFigureRenderer(FigureRenderer):
             def render_codebook_palette(self, codebook, output_path):  # type: ignore
@@ -38,6 +41,9 @@ class TestFigureRenderer:
                 pass
 
             def render_corpus_signatures(self, documents, labels, label_names, codebook, output_path, top_colors=24):  # type: ignore  # noqa: E501
+                pass
+
+            def render_rate_distortion(self, frontier, output_path):  # type: ignore
                 pass
 
         renderer = ConcreteFigureRenderer()

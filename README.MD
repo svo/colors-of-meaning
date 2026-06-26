@@ -279,6 +279,25 @@ Compare the fixed uniform Lab color grid against gzip and Product Quantization:
 tox -e compress -- --compare-baselines --embeddings-path artifacts/encoded/test_embeddings.npy
 ```
 
+### Rate–Distortion Frontier
+
+The ~1024:1 ratio is a single operating point. Sweep the bit budget to turn it into a
+measured **rate–distortion frontier** — color-VQ over grid resolutions (`bins_per_dimension`
+∈ {2, 4, 8, 16} → 3/6/9/12 bits), Product Quantization matched to the same bits, and gzip as
+one data-dependent point — recording both native distortion (ΔE for color-VQ, MSE for gzip/PQ)
+and the color method's downstream retrieval accuracy at each budget:
+
+```bash
+tox -e rate_distortion -- --dataset ag_news --budgets 2 4 8 16 --methods color_vq gzip pq --with-accuracy --distance jensen_shannon --max-samples 200 --config configs/base.yaml
+```
+
+![Rate-distortion frontier](reports/figures/rate_distortion.png)
+
+The committed [`reports/rate_distortion.md`](reports/rate_distortion.md) holds the frontier table
+and the matched-budget comparison (color-VQ vs PQ at equal bits-per-token). On AG News, color-VQ's
+ΔE falls from ~117 at 3 bits to ~6.8 at 12 bits while gzip stays lossless at ~11,000 bits/token —
+the squeeze costs perceptual distortion and, past 9 bits, some retrieval accuracy.
+
 ### Generate Visualizations
 
 ```bash

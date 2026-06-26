@@ -11,10 +11,17 @@ from sklearn.metrics import confusion_matrix  # type: ignore
 
 from colors_of_meaning.domain.model.color_codebook import ColorCodebook
 from colors_of_meaning.domain.model.colored_document import ColoredDocument
+from colors_of_meaning.domain.model.rate_distortion_point import (
+    RateDistortionFrontier,
+    RateDistortionPoint,
+)
 from colors_of_meaning.domain.service.figure_renderer import FigureRenderer
 from colors_of_meaning.shared.lab_utils import lab_to_rgb
 
 matplotlib.use("Agg")
+
+FIGURE_DPI = 150
+RATE_DISTORTION_FIGURE_SIZE = (11.0, 7.0)
 
 
 class MatplotlibFigureRenderer(FigureRenderer):
@@ -181,6 +188,59 @@ class MatplotlibFigureRenderer(FigureRenderer):
         fig.tight_layout()
         self._save_figure(fig, output_path)
 
+    def render_rate_distortion(self, frontier: RateDistortionFrontier, output_path: str) -> None:
+        fig, distortion_axis = plt.subplots(figsize=RATE_DISTORTION_FIGURE_SIZE)
+        fig.subplots_adjust(right=0.85)
+        accuracy_axis = distortion_axis.twinx()
+
+        for method in sorted({point.method for point in frontier.points}):
+            self._plot_method_series(distortion_axis, accuracy_axis, self._method_points(frontier, method), method)
+
+        distortion_axis.set_xscale("symlog")
+        distortion_axis.set_yscale("symlog")
+        distortion_axis.set_xlabel("Bits per token (symlog scale)")
+        distortion_axis.set_ylabel("Reconstruction error, symlog (native: ΔE or MSE)")
+        accuracy_axis.set_ylabel("Downstream accuracy")
+        accuracy_axis.set_ylim(0.0, 1.0)
+        distortion_axis.set_title("Rate-distortion frontier for semantic color compression")
+        self._merge_legends(distortion_axis, accuracy_axis)
+        self._save_figure(fig, output_path, tight=False)
+
+    @staticmethod
+    def _method_points(frontier: RateDistortionFrontier, method: str) -> List[RateDistortionPoint]:
+        method_points = [point for point in frontier.points if point.method == method]
+        return sorted(method_points, key=lambda point: point.bits_per_token)
+
+    def _plot_method_series(
+        self, distortion_axis: Any, accuracy_axis: Any, points: List[RateDistortionPoint], method: str
+    ) -> None:
+        bits = [point.bits_per_token for point in points]
+        distortion = [point.reconstruction_error for point in points]
+        distortion_axis.plot(bits, distortion, marker="o", label=f"{method} distortion")
+        self._plot_accuracy_series(accuracy_axis, points, method)
+
+    def _plot_accuracy_series(self, accuracy_axis: Any, points: List[RateDistortionPoint], method: str) -> None:
+        measured = self._points_with_accuracy(points)
+        if not measured:
+            return
+        accuracy_axis.plot(
+            [point.bits_per_token for point in measured],
+            [point.accuracy for point in measured],
+            marker="s",
+            linestyle="--",
+            label=f"{method} accuracy",
+        )
+
+    @staticmethod
+    def _points_with_accuracy(points: List[RateDistortionPoint]) -> List[RateDistortionPoint]:
+        return [point for point in points if point.accuracy is not None]
+
+    @staticmethod
+    def _merge_legends(primary_axis: Any, secondary_axis: Any) -> None:
+        primary_handles, primary_labels = primary_axis.get_legend_handles_labels()
+        secondary_handles, secondary_labels = secondary_axis.get_legend_handles_labels()
+        primary_axis.legend(primary_handles + secondary_handles, primary_labels + secondary_labels, loc="best")
+
     @staticmethod
     def _corpus_histograms(
         documents: List[ColoredDocument], labels: List[int], label_index: int
@@ -210,9 +270,12 @@ class MatplotlibFigureRenderer(FigureRenderer):
         return selected
 
     @staticmethod
-    def _save_figure(fig: plt.Figure, output_path: str) -> None:
+    def _save_figure(fig: plt.Figure, output_path: str, tight: bool = True) -> None:
         output_dir = os.path.dirname(output_path)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        if tight:
+            fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
+        else:
+            fig.savefig(output_path, dpi=FIGURE_DPI)
         plt.close(fig)

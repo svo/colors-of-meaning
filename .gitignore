@@ -68,6 +68,10 @@ artifacts/
 reports/*
 !reports/eval_results.md
 !reports/interpretability.md
+!reports/rate_distortion.md
+!reports/figures
+reports/figures/*
+!reports/figures/rate_distortion.png
 
 # Training data (sample data is tracked separately)
 data/train.txt
