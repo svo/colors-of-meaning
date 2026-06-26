@@ -29,6 +29,9 @@ from colors_of_meaning.domain.service.distance_calculator import DistanceCalcula
 from colors_of_meaning.infrastructure.dataset.ag_news_dataset_adapter import (
     AGNewsDatasetAdapter,
 )
+from colors_of_meaning.infrastructure.dataset.document_corpus_dataset_adapter import (
+    DocumentCorpusDatasetAdapter,
+)
 from colors_of_meaning.infrastructure.dataset.imdb_dataset_adapter import (
     IMDBDatasetAdapter,
 )
@@ -79,6 +82,13 @@ PQ_BITS_PER_SUBQUANTIZER = 3
 class RateDistortionArgs:
     config: str = "configs/base.yaml"
     dataset: Literal["ag_news", "imdb", "newsgroups"] = "ag_news"
+    source: Literal["dataset", "documents"] = "dataset"
+    documents_dir: str = "./documents"
+    min_paragraph_chars: int = 200
+    paragraphs_per_work: int = 60
+    split_strategy: Literal["work", "paragraph"] = "work"
+    validation_fraction: float = 0.2
+    test_fraction: float = 0.2
     budgets: List[int] = field(default_factory=lambda: list(DEFAULT_BUDGETS))
     methods: List[str] = field(default_factory=lambda: list(DEFAULT_METHODS))
     model_path: str = "artifacts/models/projector.pth"
@@ -98,6 +108,19 @@ def _setup_dataset(dataset_name: str) -> DatasetRepository:
         "newsgroups": NewsgroupsDatasetAdapter,
     }
     return adapters[dataset_name]()
+
+
+def _build_dataset_repository(args: RateDistortionArgs) -> DatasetRepository:
+    if args.source == "documents":
+        return DocumentCorpusDatasetAdapter(
+            documents_dir=args.documents_dir,
+            min_paragraph_chars=args.min_paragraph_chars,
+            paragraphs_per_work=args.paragraphs_per_work,
+            split_strategy=args.split_strategy,
+            validation_fraction=args.validation_fraction,
+            test_fraction=args.test_fraction,
+        )
+    return _setup_dataset(args.dataset)
 
 
 def _create_distance_calculator(
@@ -249,12 +272,23 @@ def _provenance_line() -> str:
     return f"Library versions: numpy {numpy.__version__}, scikit-learn {sklearn.__version__}."
 
 
+def _source_flags(args: RateDistortionArgs) -> str:
+    if args.source == "documents":
+        return (
+            f"--source documents --documents-dir {args.documents_dir} "
+            f"--split-strategy {args.split_strategy} --min-paragraph-chars {args.min_paragraph_chars} "
+            f"--paragraphs-per-work {args.paragraphs_per_work} "
+            f"--validation-fraction {args.validation_fraction} --test-fraction {args.test_fraction}"
+        )
+    return f"--dataset {args.dataset}"
+
+
 def _reproduce_command(args: RateDistortionArgs) -> str:
     budgets = " ".join(str(budget) for budget in args.budgets)
     methods = " ".join(args.methods)
     accuracy_flag = " --with-accuracy" if args.with_accuracy else ""
     return (
-        f"tox -e rate_distortion -- --dataset {args.dataset} --budgets {budgets} "
+        f"tox -e rate_distortion -- {_source_flags(args)} --budgets {budgets} "
         f"--methods {methods}{accuracy_flag} --distance {args.distance} "
         f"--max-samples {args.max_samples} --config {args.config}"
     )
@@ -325,6 +359,7 @@ def _log_startup(args: RateDistortionArgs, config: SynestheticConfig, correlatio
         "Starting rate-distortion sweep",
         extra={
             "correlation_id": correlation_id,
+            "source": args.source,
             "dataset": args.dataset,
             "budgets": args.budgets,
             "methods": args.methods,
@@ -337,7 +372,7 @@ def _log_startup(args: RateDistortionArgs, config: SynestheticConfig, correlatio
 def main(args: RateDistortionArgs) -> None:
     config = SynestheticConfig.from_yaml(args.config)
     correlation_id = str(uuid.uuid4())
-    dataset_repository = _setup_dataset(args.dataset)
+    dataset_repository = _build_dataset_repository(args)
     embedding_adapter = SentenceEmbeddingAdapter()
     color_mapper = create_color_mapper(args.mapper_type, config)
     color_mapper.load_weights(args.model_path)

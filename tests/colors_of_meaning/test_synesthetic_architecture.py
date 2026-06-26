@@ -111,6 +111,15 @@ def test_should_keep_the_lossless_codec_model_free() -> None:
     )
 
 
+def test_should_implement_dataset_repository_in_document_corpus_adapter() -> None:
+    from colors_of_meaning.domain.repository.dataset_repository import DatasetRepository
+    from colors_of_meaning.infrastructure.dataset.document_corpus_dataset_adapter import (
+        DocumentCorpusDatasetAdapter,
+    )
+
+    assert issubclass(DocumentCorpusDatasetAdapter, DatasetRepository)
+
+
 def test_should_keep_dataset_infrastructure_independent_of_upper_layers() -> None:
     (
         archrule(

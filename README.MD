@@ -298,6 +298,41 @@ and the matched-budget comparison (color-VQ vs PQ at equal bits-per-token). On A
 ΔE falls from ~117 at 3 bits to ~6.8 at 12 bits while gzip stays lossless at ~11,000 bits/token —
 the squeeze costs perceptual distortion and, past 9 bits, some retrieval accuracy.
 
+#### Running on your own document corpus
+
+The same frontier can be measured over **real prose you supply** instead of the built-in
+labelled datasets. Drop UTF-8 `.txt` files under a git-ignored `./documents/` tree following the
+convention `documents/<author>/<work>.txt` — the immediate parent directory names the **author**
+(which becomes the classification label) and the filename names the **work**:
+
+```
+documents/
+  austen/pride_and_prejudice.txt
+  austen/emma.txt           # many works per author all count toward that author
+  darwin/origin_of_species.txt
+  darwin/voyage_of_the_beagle.txt
+```
+
+Each work is stripped of Project Gutenberg boilerplate and split into paragraph-level samples.
+Authors are sorted lexicographically and given contiguous integer labels for cross-machine
+determinism. The corpus is partitioned into a **three-way train / validation / test split**: by
+default (`--split-strategy work`) whole works are held out per author into each split (controlled by
+`--validation-fraction` / `--test-fraction`, default 0.2 / 0.2 → roughly 60/20/20), so the
+author-accuracy axis measures generalisation to unseen works rather than memorising one. Authors
+with fewer than three works fall back to a paragraph-level three-way split, and authors yielding
+fewer than three qualifying paragraphs are skipped. Point the sweep at the corpus with `--source
+documents`:
+
+```bash
+tox -e rate_distortion -- --source documents --documents-dir ./documents --min-paragraph-chars 200 --paragraphs-per-work 60 --validation-fraction 0.2 --test-fraction 0.2 --with-accuracy
+```
+
+(The retrieval eval fits on the `train` split and scores `test`; the `validation` split is produced
+for future projector model-selection — pick the checkpoint on validation, report final on test.)
+
+Because `./documents/` is git-ignored, a documents-sourced frontier is a local, opt-in run and is
+not regenerated in CI; the committed AG News frontier above remains the reproducible one.
+
 ### Generate Visualizations
 
 ```bash

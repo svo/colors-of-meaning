@@ -14,6 +14,8 @@ from colors_of_meaning.interface.cli.train import (
     _load_supervised_data,
     _load_texts_from_file,
     _load_training_data,
+    _load_documents_data,
+    _build_document_corpus,
     _configure_supervised_mapper,
     _configure_structured_mapper,
     _uses_label_sentiment,
@@ -29,6 +31,47 @@ from colors_of_meaning.infrastructure.ml.structured_pytorch_color_mapper import 
 from colors_of_meaning.infrastructure.ml.supervised_pytorch_color_mapper import (
     SupervisedPyTorchColorMapper,
 )
+
+
+class TestDocumentsSource:
+    @patch("colors_of_meaning.interface.cli.train.DocumentCorpusDatasetAdapter")
+    def test_should_build_document_corpus_with_the_requested_split_strategy(self, mock_adapter: Mock) -> None:
+        _build_document_corpus(TrainArgs(source="documents", split_strategy="paragraph"))
+
+        assert mock_adapter.call_args.kwargs["split_strategy"] == "paragraph"
+
+    @patch("builtins.print")
+    @patch("colors_of_meaning.interface.cli.train.DocumentCorpusDatasetAdapter")
+    def test_should_return_author_labels_for_supervised_documents(self, mock_adapter: Mock, _print: Mock) -> None:
+        mock_adapter.return_value.get_samples.return_value = [Mock(text="a", label=0), Mock(text="b", label=1)]
+
+        _texts, labels, _sentiment = _load_documents_data(
+            TrainArgs(source="documents", mapper_type="supervised"), Mock()
+        )
+
+        assert list(labels) == [0, 1]
+
+    @patch("builtins.print")
+    @patch("colors_of_meaning.interface.cli.train.DocumentCorpusDatasetAdapter")
+    def test_should_return_no_labels_for_unconstrained_documents(self, mock_adapter: Mock, _print: Mock) -> None:
+        mock_adapter.return_value.get_samples.return_value = [Mock(text="a", label=0)]
+
+        _texts, labels, _sentiment = _load_documents_data(
+            TrainArgs(source="documents", mapper_type="unconstrained"), Mock()
+        )
+
+        assert labels is None
+
+    @patch("colors_of_meaning.interface.cli.train._load_documents_data")
+    @patch("colors_of_meaning.interface.cli.train._validate_sentiment_source")
+    def test_should_route_to_documents_loader_when_source_is_documents(
+        self, _validate: Mock, mock_load_documents: Mock
+    ) -> None:
+        mock_load_documents.return_value = (["t"], None, None)
+
+        result = _load_training_data(TrainArgs(source="documents"), Mock())
+
+        assert result == (["t"], None, None)
 
 
 class TestCreateColorMapper:

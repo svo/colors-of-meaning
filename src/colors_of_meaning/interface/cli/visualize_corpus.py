@@ -4,6 +4,10 @@ from pathlib import Path
 from typing import List, Tuple
 
 from colors_of_meaning.shared.synesthetic_config import SynestheticConfig
+from colors_of_meaning.shared.document_corpus import (
+    extract_paragraphs as _extract_paragraphs,
+    strip_gutenberg_boilerplate as _strip_gutenberg_boilerplate,
+)
 from colors_of_meaning.infrastructure.embedding.sentence_embedding_adapter import (
     SentenceEmbeddingAdapter,
 )
@@ -43,23 +47,6 @@ def _parse_corpus_specs(corpus_specs: str) -> List[Tuple[str, str]]:
         label, _, path = item.partition("=")
         specs.append((label.strip(), path.strip()))
     return specs
-
-
-def _strip_gutenberg_boilerplate(text: str) -> str:
-    start = text.find("*** START OF")
-    start = text.find("\n", start) + 1 if start != -1 else 0
-    end = text.find("*** END OF")
-    end = end if end != -1 else len(text)
-    return text[start:end]
-
-
-def _extract_paragraphs(text: str, min_chars: int) -> List[str]:
-    paragraphs: List[str] = []
-    for block in text.replace("\r\n", "\n").split("\n\n"):
-        joined = " ".join(line.strip() for line in block.split("\n") if line.strip())
-        if len(joined) >= min_chars:
-            paragraphs.append(joined)
-    return paragraphs
 
 
 def _load_corpus_paragraphs(path: str, min_chars: int, limit: int) -> List[str]:

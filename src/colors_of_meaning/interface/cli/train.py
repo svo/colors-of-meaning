@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt
 import tyro
 from dataclasses import dataclass
-from typing import Optional, cast
+from typing import Literal, Optional, cast
 
 from colors_of_meaning.shared.synesthetic_config import SynestheticConfig, StructuredMapperConfig
 from colors_of_meaning.shared.determinism import seed_everything
@@ -41,6 +41,9 @@ from colors_of_meaning.infrastructure.dataset.imdb_dataset_adapter import (
 from colors_of_meaning.infrastructure.dataset.newsgroups_dataset_adapter import (
     NewsgroupsDatasetAdapter,
 )
+from colors_of_meaning.infrastructure.dataset.document_corpus_dataset_adapter import (
+    DocumentCorpusDatasetAdapter,
+)
 from colors_of_meaning.domain.repository.dataset_repository import DatasetRepository
 
 logger = logging.getLogger(__name__)
@@ -57,6 +60,13 @@ class TrainArgs:
     mapper_type: str = "unconstrained"
     codebook_mode: str = "uniform"
     deterministic: bool = False
+    source: Literal["dataset", "documents"] = "dataset"
+    documents_dir: str = "./documents"
+    min_paragraph_chars: int = 200
+    paragraphs_per_work: int = 60
+    split_strategy: Literal["work", "paragraph"] = "work"
+    validation_fraction: float = 0.2
+    test_fraction: float = 0.2
 
 
 def _create_codebook_factory(color_mapper: ColorMapper) -> ColorCodebookFactory:
@@ -147,8 +157,32 @@ def _validate_sentiment_source(args: TrainArgs, config: SynestheticConfig) -> No
         raise ValueError(f"Unknown sentiment_source: {source}. Supported: {sorted(SUPPORTED_SENTIMENT_SOURCES)}")
 
 
+def _build_document_corpus(args: TrainArgs) -> DocumentCorpusDatasetAdapter:
+    return DocumentCorpusDatasetAdapter(
+        documents_dir=args.documents_dir,
+        min_paragraph_chars=args.min_paragraph_chars,
+        paragraphs_per_work=args.paragraphs_per_work,
+        split_strategy=args.split_strategy,
+        validation_fraction=args.validation_fraction,
+        test_fraction=args.test_fraction,
+    )
+
+
+def _load_documents_data(args: TrainArgs, config: SynestheticConfig) -> tuple:
+    print(f"Loading document corpus train split from {args.documents_dir}...")
+    samples = _build_document_corpus(args).get_samples(
+        split=config.dataset.train_split, max_samples=config.dataset.max_samples, seed=config.training.seed
+    )
+    texts = [sample.text for sample in samples]
+    if args.mapper_type == "supervised":
+        return texts, np.array([sample.label for sample in samples]), None
+    return texts, None, None
+
+
 def _load_training_data(args: TrainArgs, config: SynestheticConfig) -> tuple:
     _validate_sentiment_source(args, config)
+    if args.source == "documents":
+        return _load_documents_data(args, config)
     if args.mapper_type == "supervised":
         print(f"Loading labeled dataset: {config.dataset.name}...")
         texts, labels = _load_supervised_data(config)

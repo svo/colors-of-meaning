@@ -64,6 +64,9 @@ MANIFEST
 # Artifacts (models, codebooks, encoded documents)
 artifacts/
 
+# Authored document corpus (documents/<author>/<work>.txt source prose)
+documents/
+
 # Generated reports and figures (the committed eval results table is tracked)
 reports/*
 !reports/eval_results.md

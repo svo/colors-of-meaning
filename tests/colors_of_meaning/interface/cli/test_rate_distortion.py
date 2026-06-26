@@ -28,9 +28,11 @@ from colors_of_meaning.infrastructure.ml.wasserstein_distance_calculator import 
 from colors_of_meaning.interface.cli.rate_distortion import (
     RateDistortionArgs,
     _build_baseline_factory,
+    _build_dataset_repository,
     _build_evaluate_factory,
     _create_distance_calculator,
     _pq_subquantizers,
+    _source_flags,
     main,
 )
 
@@ -137,11 +139,54 @@ class TestBuildEvaluateFactory:
         assert factory("pq", 2) is None
 
 
+class TestBuildDatasetRepository:
+    def test_should_build_document_corpus_adapter_for_documents_source(self, mocker) -> None:
+        adapter = mocker.patch(f"{MODULE}.DocumentCorpusDatasetAdapter")
+
+        result = _build_dataset_repository(RateDistortionArgs(source="documents", documents_dir="docs"))
+
+        assert result is adapter.return_value
+
+    def test_should_pass_documents_dir_to_the_corpus_adapter(self, mocker) -> None:
+        adapter = mocker.patch(f"{MODULE}.DocumentCorpusDatasetAdapter")
+
+        _build_dataset_repository(RateDistortionArgs(source="documents", documents_dir="docs"))
+
+        assert adapter.call_args.kwargs["documents_dir"] == "docs"
+
+    def test_should_pass_split_strategy_to_the_corpus_adapter(self, mocker) -> None:
+        adapter = mocker.patch(f"{MODULE}.DocumentCorpusDatasetAdapter")
+
+        _build_dataset_repository(RateDistortionArgs(source="documents", split_strategy="paragraph"))
+
+        assert adapter.call_args.kwargs["split_strategy"] == "paragraph"
+
+    def test_should_build_hugging_face_adapter_for_dataset_source(self, mocker) -> None:
+        agnews = mocker.patch(f"{MODULE}.AGNewsDatasetAdapter")
+
+        result = _build_dataset_repository(RateDistortionArgs(source="dataset", dataset="ag_news"))
+
+        assert result is agnews.return_value
+
+
+class TestSourceFlags:
+    def test_should_emit_the_documents_source_flag(self) -> None:
+        assert "--source documents" in _source_flags(RateDistortionArgs(source="documents"))
+
+    def test_should_emit_the_split_strategy_for_documents(self) -> None:
+        assert "--split-strategy work" in _source_flags(RateDistortionArgs(source="documents"))
+
+    def test_should_emit_only_the_dataset_flag_for_dataset_source(self) -> None:
+        assert _source_flags(RateDistortionArgs(source="dataset", dataset="imdb")) == "--dataset imdb"
+
+
 class TestRateDistortionCli:
     def _setup(self, mocker, tmp_path, frontier, **overrides) -> SimpleNamespace:
         mocker.patch(f"{MODULE}.SynestheticConfig").from_yaml.return_value = Mock()
         dataset = mocker.patch(f"{MODULE}.AGNewsDatasetAdapter")
         dataset.return_value.get_samples.return_value = [Mock(text="a"), Mock(text="b")]
+        documents = mocker.patch(f"{MODULE}.DocumentCorpusDatasetAdapter")
+        documents.return_value.get_samples.return_value = [Mock(text="a"), Mock(text="b")]
         embedding = mocker.patch(f"{MODULE}.SentenceEmbeddingAdapter")
         embedding.return_value.encode_batch.return_value = np.zeros((2, 8), dtype=np.float32)
         mocker.patch(f"{MODULE}.create_color_mapper")
@@ -154,7 +199,7 @@ class TestRateDistortionCli:
             figure_path=str(tmp_path / "rate_distortion.png"),
             **overrides,
         )
-        return SimpleNamespace(use_case=use_case, renderer=renderer, args=args)
+        return SimpleNamespace(use_case=use_case, renderer=renderer, documents=documents, args=args)
 
     def test_should_pass_budgets_to_the_sweep(self, mocker, tmp_path) -> None:
         context = self._setup(mocker, tmp_path, _frontier())
@@ -206,6 +251,20 @@ class TestRateDistortionCli:
         context.renderer.return_value.render_rate_distortion.assert_called_once_with(
             _frontier_arg(context), str(tmp_path / "rate_distortion.png")
         )
+
+    def test_should_build_the_document_corpus_adapter_when_source_is_documents(self, mocker, tmp_path) -> None:
+        context = self._setup(mocker, tmp_path, _frontier(), source="documents", documents_dir="mydocs")
+
+        main(context.args)
+
+        assert context.documents.call_args.kwargs["documents_dir"] == "mydocs"
+
+    def test_should_record_the_documents_source_in_the_reproduce_command(self, mocker, tmp_path) -> None:
+        context = self._setup(mocker, tmp_path, _frontier(), source="documents")
+
+        main(context.args)
+
+        assert "--source documents" in (tmp_path / "rate_distortion.md").read_text()
 
 
 def _frontier_arg(context: SimpleNamespace) -> RateDistortionFrontier:

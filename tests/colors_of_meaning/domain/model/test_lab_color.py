@@ -43,3 +43,8 @@ class TestLabColor:
         assert clamped.l == 50.0
         assert clamped.a == 10.0
         assert clamped.b == -20.0
+
+    def test_should_build_clamped_color_from_out_of_range_values_without_raising(self) -> None:
+        color = LabColor.from_unclamped(150.0, 200.0, -200.0)
+
+        assert color.to_tuple() == (100.0, 127.0, -128.0)

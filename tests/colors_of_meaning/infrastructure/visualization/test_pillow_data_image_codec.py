@@ -13,7 +13,7 @@ from colors_of_meaning.infrastructure.visualization.pillow_data_image_codec impo
     PillowDataImageCodec,
 )
 
-BOOK_PATH = Path(__file__).resolve().parents[4] / "reports" / "austen_pride.txt"
+BOOK_PATH = Path(__file__).resolve().parents[4] / "documents" / "austen" / "pride_and_prejudice.txt"
 MULTI_PAGE_TEXT = "".join(f"entry {index}: the quick brown fox jumps over {index} lazy dogs.\n" for index in range(80))
 MULTI_PAGE_CELL_SIZE = 35
 
@@ -127,6 +127,7 @@ class TestMultiPage:
 
 
 class TestWholeBook:
+    @pytest.mark.skipif(not BOOK_PATH.exists(), reason="local document corpus book is git-ignored and may be absent")
     def test_should_round_trip_a_whole_public_domain_book_byte_for_byte(
         self, codec: PillowDataImageCodec, tmp_path: Path
     ) -> None:

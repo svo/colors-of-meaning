@@ -30,6 +30,9 @@ from colors_of_meaning.infrastructure.dataset.imdb_dataset_adapter import (
 from colors_of_meaning.infrastructure.dataset.newsgroups_dataset_adapter import (
     NewsgroupsDatasetAdapter,
 )
+from colors_of_meaning.infrastructure.dataset.document_corpus_dataset_adapter import (
+    DocumentCorpusDatasetAdapter,
+)
 from colors_of_meaning.infrastructure.evaluation.sklearn_metrics_calculator import (
     SklearnMetricsCalculator,
 )
@@ -66,6 +69,13 @@ class EvalArgs:
     k_neighbors: int = 5
     mapper_type: str = "unconstrained"
     max_samples: Optional[int] = None
+    source: Literal["dataset", "documents"] = "dataset"
+    documents_dir: str = "./documents"
+    min_paragraph_chars: int = 200
+    paragraphs_per_work: int = 60
+    split_strategy: Literal["work", "paragraph"] = "work"
+    validation_fraction: float = 0.2
+    test_fraction: float = 0.2
 
 
 def _setup_dataset(dataset_name: str) -> DatasetRepository:
@@ -77,6 +87,24 @@ def _setup_dataset(dataset_name: str) -> DatasetRepository:
     adapter_class, message = dataset_adapters[dataset_name]
     print(message)
     return adapter_class()
+
+
+def _build_dataset_repository(args: EvalArgs) -> DatasetRepository:
+    if args.source == "documents":
+        return _build_document_corpus(args)
+    return _setup_dataset(args.dataset)
+
+
+def _build_document_corpus(args: EvalArgs) -> DatasetRepository:
+    print(f"Loading document corpus from {args.documents_dir}...")
+    return DocumentCorpusDatasetAdapter(
+        documents_dir=args.documents_dir,
+        min_paragraph_chars=args.min_paragraph_chars,
+        paragraphs_per_work=args.paragraphs_per_work,
+        split_strategy=args.split_strategy,
+        validation_fraction=args.validation_fraction,
+        test_fraction=args.test_fraction,
+    )
 
 
 def _create_distance_calculator(
@@ -151,7 +179,7 @@ def _resolve_max_samples(args: EvalArgs, config: SynestheticConfig) -> Optional[
 
 def main(args: EvalArgs) -> None:
     config = SynestheticConfig.from_yaml(args.config)
-    dataset_repo = _setup_dataset(args.dataset)
+    dataset_repo = _build_dataset_repository(args)
     classifier, bits_per_token = _create_classifier(args, config)
     evaluate_use_case = EvaluateUseCase(classifier, SklearnMetricsCalculator(), dataset_repo)
     max_samples = _resolve_max_samples(args, config)

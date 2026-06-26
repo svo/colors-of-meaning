@@ -8,11 +8,36 @@ from colors_of_meaning.interface.cli.eval import (
     DEFAULT_SINKHORN_REG,
     EvalArgs,
     main,
+    _build_dataset_repository,
+    _build_document_corpus,
     _create_color_classifier,
     _create_distance_calculator,
     _resolve_max_samples,
     _resolved_sinkhorn_reg,
 )
+
+
+class TestEvalDocumentsSource:
+    @patch("builtins.print")
+    @patch("colors_of_meaning.interface.cli.eval.DocumentCorpusDatasetAdapter")
+    def test_should_build_document_corpus_when_source_is_documents(self, mock_adapter: Mock, _print: Mock) -> None:
+        result = _build_dataset_repository(EvalArgs(source="documents"))
+
+        assert result is mock_adapter.return_value
+
+    @patch("builtins.print")
+    @patch("colors_of_meaning.interface.cli.eval.AGNewsDatasetAdapter")
+    def test_should_build_hugging_face_adapter_when_source_is_dataset(self, mock_agnews: Mock, _print: Mock) -> None:
+        result = _build_dataset_repository(EvalArgs(source="dataset", dataset="ag_news"))
+
+        assert result is mock_agnews.return_value
+
+    @patch("builtins.print")
+    @patch("colors_of_meaning.interface.cli.eval.DocumentCorpusDatasetAdapter")
+    def test_should_pass_documents_dir_to_the_corpus_adapter(self, mock_adapter: Mock, _print: Mock) -> None:
+        _build_document_corpus(EvalArgs(source="documents", documents_dir="docs"))
+
+        assert mock_adapter.call_args.kwargs["documents_dir"] == "docs"
 
 
 def _run_color_classifier_with_mocked_factory(mapper_type: str) -> tuple:

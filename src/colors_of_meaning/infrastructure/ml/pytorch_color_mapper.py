@@ -75,7 +75,7 @@ class PyTorchColorMapper(ColorMapper):
             lab_tensor = self.network(embedding_tensor)
             lab_values = lab_tensor.cpu().numpy()[0]
 
-        return LabColor(l=float(lab_values[0]), a=float(lab_values[1]), b=float(lab_values[2])).clamp()
+        return LabColor.from_unclamped(lab_values[0], lab_values[1], lab_values[2])
 
     def embed_batch_to_lab(self, embeddings: npt.NDArray) -> List[LabColor]:
         self.network.eval()
@@ -84,7 +84,7 @@ class PyTorchColorMapper(ColorMapper):
             lab_tensor = self.network(embeddings_tensor)
             lab_values = lab_tensor.cpu().numpy()
 
-        return [LabColor(l=float(row[0]), a=float(row[1]), b=float(row[2])).clamp() for row in lab_values]
+        return [LabColor.from_unclamped(row[0], row[1], row[2]) for row in lab_values]
 
     def train(self, embeddings: npt.NDArray, epochs: int, learning_rate: float) -> None:
         self.network.train()
