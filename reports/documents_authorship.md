@@ -84,6 +84,29 @@ Darwin's scientific prose (`coral_reefs`, `origin_of_species`, `the_descent_of_m
 blue/purple/magenta of the fiction — the colour signature picks up the science/fiction
 register even before authorship.
 
+### Lossless A4 colour-barcode representation
+
+The signatures above are a *lossy, semantic* rendering. Separately, the lossless codec
+(`encode_lossless` / `decode_lossless`) stores each book's **exact text** as printable A4
+colour-barcode page(s) that decode back **byte-for-byte**. Encoding every work and decoding
+it again:
+
+- **73 books → 79 A4 pages; 0 / 73 round-trip failures** — every book decodes to its exact
+  source bytes.
+- At 300 DPI most books fit on a single A4 page (the text is gzip-compressed before packing
+  into the colour cells); only the six longest need two pages (`smith/wealth_of_nations`
+  — 2.4 MB of text — `eliot/middlemarch`, `eliot/daniel_deronda`, `dickens/bleak_house`,
+  `dickens/david_copperfield`, `darwin/the_descent_of_man`).
+
+These barcode images are dense data (~37 MB for all 73) and are **not committed** — they are
+git-ignored, regenerable local artifacts. Regenerate and verify one with:
+
+```bash
+tox -e encode_lossless -- --input-path documents/austen/pride_and_prejudice.txt \
+  --output-path reports/figures/lossless/austen__pride_and_prejudice.png --dpi 300
+tox -e decode_lossless -- --input-paths reports/figures/lossless/austen__pride_and_prejudice.png
+```
+
 ## Rate–distortion frontier (documents)
 
 Sweeping the colour palette resolution (3/6/9/12 bits) against gzip and Product
