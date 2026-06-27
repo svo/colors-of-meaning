@@ -31,6 +31,17 @@ even losslessly store meaning.** What this repository demonstrates, end to end:
 - **Interpretable & validated.** Structured-mapper axes (hue↔topic, lightness↔sentiment,
   chroma↔concreteness) pass a falsifiable held-out test against a negative control.
 
+**Measured against the [article](https://www.qual.is/posts/colors-of-meaning)** — ✅ shipped · ◑ partial · ➕ beyond the paper · ⬜ future:
+
+| The article proposed | Where we landed |
+|---|---|
+| Full pipeline: Lab mapping → 4,096-colour palette → colour-histogram docs → Wasserstein retrieval, + topic / sentiment / search tasks | ✅ shipped |
+| Interpretable hue / lightness / chroma axes | ✅ validated against a negative control |
+| ~2,000:1 compression (assumes 768-dim embeddings) | ◑ exact ~1024:1 at the shipped 384-dim model |
+| "Competitive accuracy with dramatically less space" | ◑ space yes; accuracy trails baselines — cost **measured** (rate–distortion), not hidden |
+| Lossless storage (the paper is lossy-only) | ➕ byte-exact A4 colour-barcode codec |
+| Other perceptual modalities (sound / touch / taste) | ⬜ future work |
+
 📂 **Full image gallery** (every per-book A4 colour-of-meaning sheet and the lossless colour-barcode
 pages): **[Google Drive](https://drive.google.com/drive/folders/1kfENTLEe_Zaw6Q4kcgwTYXuDQwNAo9ap)**
 &nbsp;·&nbsp; 📄 **Detailed results:** [document-corpus authorship](reports/documents_authorship.md)
