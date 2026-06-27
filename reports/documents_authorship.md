@@ -69,6 +69,21 @@ Per-author colour signatures (the dominant palette colours for each author):
 
 ![Document colour signatures](figures/documents_color_signatures.png)
 
+### A4 colour image per book
+
+Each of the 73 works rendered as an A4 colours-of-meaning sheet — horizontal bands of the
+book's palette colours, sized by how often the trained projector maps the book's sentences
+to each colour (the `signature` layout, computed over up to 300 paragraphs per book). The
+full-resolution A4 sheets are in [`figures/a4/`](figures/a4/) (one `<author>__<work>.png`
+per book); the contact sheet below shows all 73:
+
+![Per-book A4 colour signatures](figures/documents_a4_gallery.png)
+
+Darwin's scientific prose (`coral_reefs`, `origin_of_species`, `the_descent_of_man`,
+`voyage_of_the_beagle`) renders a distinctive bright cyan, visibly separated from the dark
+blue/purple/magenta of the fiction — the colour signature picks up the science/fiction
+register even before authorship.
+
 ## Rate–distortion frontier (documents)
 
 Sweeping the colour palette resolution (3/6/9/12 bits) against gzip and Product
