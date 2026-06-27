@@ -6,6 +6,43 @@
 
 **Machine synesthesia for semantic compression and retrieval**
 
+## TL;DR
+
+**Colors of Meaning compresses a 384-dim sentence embedding into a single 12-bit colour over a
+4,096-colour CIE-Lab palette — an exact ~1024:1 ratio — and represents any document as a
+*distribution of colours*, keeping enough structure to retrieve, classify, interpret, and
+even losslessly store meaning.** What this repository demonstrates, end to end:
+
+- **Extreme yet useful compression.** ~1024:1 (12,288 → 12 bits/sentence). On AG News the
+  colour method retrieves at **81.8%** accuracy at the 4,000-document scale (TF-IDF/HNSW
+  baselines ~90–92%); the cost of compression is quantified on a measured **rate–distortion
+  frontier** against gzip and Product Quantization.
+- **Real prose, not just benchmarks.** A 12-author / 73-work Project Gutenberg corpus is a
+  first-class dataset source (author = label, leakage-free work-level train/validation/test
+  split). A colour projector trained and *validation-selected* on it reaches **20.7%**
+  held-out 12-way authorship accuracy — **~2.5× the 8.3% chance** — vs 42.5% for full-lexical
+  TF-IDF. The gap is the honest price of squeezing meaning into 12 bits.
+- **Documents you can see.** Each text renders *as colour*: a t-SNE where authors form colour
+  neighbourhoods, per-author signatures, and an **A4 colours-of-meaning sheet per book**
+  (Darwin's science prose is visibly cyan vs the fiction's dark blue/purple).
+- **Documents you can store losslessly.** The same texts also encode to printable **A4
+  colour-barcode pages that decode back byte-for-byte** — all 73 books verified, 0 round-trip
+  failures.
+- **Interpretable & validated.** Structured-mapper axes (hue↔topic, lightness↔sentiment,
+  chroma↔concreteness) pass a falsifiable held-out test against a negative control.
+
+📂 **Full image gallery** (every per-book A4 colour-of-meaning sheet and the lossless colour-barcode
+pages): **[Google Drive](https://drive.google.com/drive/folders/1kfENTLEe_Zaw6Q4kcgwTYXuDQwNAo9ap)**
+&nbsp;·&nbsp; 📄 **Detailed results:** [document-corpus authorship](reports/documents_authorship.md)
+· [scaled multi-dataset eval](reports/eval_results.md) · [rate–distortion](reports/rate_distortion.md)
+· [interpretability](reports/interpretability.md)
+
+Authors cluster by colour, and every book becomes an A4 colour signature (one cell per book):
+
+![t-SNE of document colour distributions, coloured by author](reports/figures/documents_color_tsne.png)
+
+![Contact sheet of the A4 colour signature for each of the 73 books](reports/figures/documents_a4_gallery.png)
+
 ## Project Overview
 
 This project implements the **Colors of Meaning** experiment described in [the research article](https://www.qual.is/posts/colors-of-meaning), which explores a novel approach to semantic understanding through synesthesia.
