@@ -54,6 +54,63 @@ Authors cluster by colour, and every book becomes an A4 colour signature (one ce
 
 ![Contact sheet of the A4 colour signature for each of the 73 books](reports/figures/documents_a4_gallery.png)
 
+## Pipeline & artifacts
+
+How the **processes** (blue) turn text into the **artifacts** (green) — a lossy *semantic* path
+(~1024:1) and a separate, model-free *lossless* codec:
+
+```mermaid
+flowchart TD
+    classDef proc fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a;
+    classDef art fill:#dcfce7,stroke:#15803d,color:#14532d;
+
+    HF["HF datasets<br/>AG News · IMDB · 20 Newsgroups"]
+    DOCS["Document corpus<br/>documents/{author}/{work}.txt"]
+
+    %% training produces the artifacts the encoder loads
+    HF --> TRAIN(["train"])
+    DOCS --> TRAIN
+    TRAIN --> MODEL["projector.pth"]
+    TRAIN --> CB["codebook.pkl · 4,096 colours"]
+
+    %% semantic encoding pipeline (lossy, ~1024:1)
+    subgraph ENCODE["Semantic encoding — lossy, ~1024:1"]
+        EMB["384-dim embedding"] --> PROJ["projector → CIE Lab"] --> QZ["quantise → 12-bit colour"] --> HIST["colour histogram<br/>document = colour distribution"]
+    end
+    HF --> EMB
+    DOCS --> EMB
+    MODEL -. loads .-> PROJ
+    CB -. loads .-> QZ
+
+    %% downstream processes → artifacts
+    HIST --> EVAL(["eval / eval_suite"])
+    HIST --> RD(["rate_distortion"])
+    HIST --> INT(["interpretability"])
+    HIST --> VIS(["visualize_corpus"])
+    HIST --> EIMG(["encode_image"])
+    HIST --> QRY(["query"])
+    EVAL --> A1["eval_results.md ·<br/>documents_authorship.md"]
+    RD --> A2["rate_distortion.md + figure"]
+    INT --> A3["interpretability.md"]
+    VIS --> A4["t-SNE + colour-signature figures"]
+    EIMG --> A5["A4 colours-of-meaning sheet<br/>(one per book)"]
+    QRY --> A6["ranked documents"]
+
+    %% lossless codec — model-free, byte-exact
+    subgraph LOSSLESS["Lossless codec — model-free, byte-exact"]
+        ELL(["encode_lossless"]) --> BAR["A4 colour-barcode page(s)"] --> DLL(["decode_lossless"]) --> EXACT["exact source text"]
+    end
+    DOCS --> ELL
+
+    class TRAIN,EVAL,RD,INT,VIS,EIMG,QRY,ELL,DLL proc;
+    class MODEL,CB,HIST,A1,A2,A3,A4,A5,A6,BAR,EXACT art;
+```
+
+`train` produces the **projector + codebook**, which the semantic encoder loads to turn every
+document into a **colour histogram**; the downstream processes turn that histogram into reports,
+figures, and the per-book A4 colour sheets. The **lossless codec** is a separate, model-free path
+(`text → DEFLATE → colour-barcode pages`) that decodes back **byte-for-byte**.
+
 ## Project Overview
 
 This project implements the **Colors of Meaning** experiment described in [the research article](https://www.qual.is/posts/colors-of-meaning), which explores a novel approach to semantic understanding through synesthesia.
