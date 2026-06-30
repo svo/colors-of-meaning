@@ -54,6 +54,13 @@ Authors cluster by colour, and every book becomes an A4 colour signature (one ce
 
 ![Contact sheet of the A4 colour signature for each of the 73 books](reports/figures/documents_a4_gallery.png)
 
+And losslessly — the *exact* bytes: an entire book stored as a single A4 colour-barcode that
+decodes back **byte-for-byte**. This is the real artifact, not a mock-up — download it and run
+`tox -e decode_lossless -- --input-paths reports/figures/lossless_a_christmas_carol.png` to
+recover the full text of *A Christmas Carol*:
+
+![A Christmas Carol stored losslessly as a single A4 colour-barcode that decodes back to the exact source text](reports/figures/lossless_a_christmas_carol.png)
+
 ## Pipeline & artifacts
 
 How the **processes** (blue) turn text into the **artifacts** (green) — a lossy *semantic* path

@@ -81,6 +81,7 @@ reports/figures/*
 !reports/figures/documents_color_signatures.png
 !reports/figures/documents_rate_distortion.png
 !reports/figures/documents_a4_gallery.png
+!reports/figures/lossless_a_christmas_carol.png
 !reports/figures/a4/
 
 # Training data (sample data is tracked separately)
